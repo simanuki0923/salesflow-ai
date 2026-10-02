@@ -170,3 +170,74 @@ export type CustomerDetail = Customer & {
   /** 活動履歴 */
   activities: CustomerActivity[];
 };
+
+/**
+ * 顧客登録・編集フォームで使用する入力値。
+ *
+ * 新規登録と編集で同じデータ構造を使用するため、
+ * CustomerFormDataとして共通化する。
+ *
+ * 将来的にはLaravel APIへ
+ *
+ * POST /api/v1/customers
+ * PUT  /api/v1/customers/{id}
+ *
+ * を送信するときにも利用する。
+ */
+export type CustomerFormData = {
+  name: string;
+  nameKana: string;
+
+  contactName: string;
+  contactNameKana: string;
+
+  email: string;
+  phone: string;
+
+  postalCode: string;
+  address: string;
+
+  industry: string;
+
+  /**
+   * フォーム上では未入力を空文字で扱う。
+   *
+   * Laravel APIへ送信するときに
+   * 必要に応じてnullへ変換できる。
+   */
+  website: string;
+
+  status: CustomerStatus;
+
+  memo: string;
+};
+
+/**
+ * CustomerFormを
+ *
+ * create:
+ *   新規登録
+ *
+ * edit:
+ *   編集
+ *
+ * のどちらで使用するかを表す。
+ */
+export type CustomerFormMode = "create" | "edit";
+
+/**
+ * フォームのエラー情報。
+ *
+ * Partialを使用することで、
+ * エラーが存在する項目だけ保持できる。
+ *
+ * 例：
+ *
+ * {
+ *   name: "顧客名を入力してください",
+ *   email: "メールアドレスの形式が正しくありません"
+ * }
+ */
+export type CustomerFormErrors = Partial<
+  Record<keyof CustomerFormData, string>
+>;
