@@ -92,3 +92,150 @@ export type Project = {
    */
   progress: number;
 };
+
+/**
+ * 案件に紐づくタスクの状態。
+ *
+ * todo:
+ *   未着手
+ *
+ * in_progress:
+ *   対応中
+ *
+ * completed:
+ *   完了
+ */
+export type ProjectTaskStatus =
+  | "todo"
+  | "in_progress"
+  | "completed";
+
+/**
+ * 案件詳細画面に表示するタスク。
+ */
+export type ProjectTask = {
+  /** タスクID */
+  id: number;
+
+  /** タスク名 */
+  title: string;
+
+  /** 担当者 */
+  assignee: string;
+
+  /** 期限 */
+  dueDate: string;
+
+  /** タスク状態 */
+  status: ProjectTaskStatus;
+
+  /**
+   * 優先度。
+   *
+   * ProjectPriorityを再利用することで、
+   * 案件とタスクで優先度表現を統一する。
+   */
+  priority: ProjectPriority;
+};
+
+/**
+ * 案件に関する活動履歴の種類。
+ */
+export type ProjectActivityType =
+  | "meeting"
+  | "email"
+  | "call"
+  | "note";
+
+/**
+ * 案件の活動履歴。
+ */
+export type ProjectActivity = {
+  id: number;
+
+  /** 活動種類 */
+  type: ProjectActivityType;
+
+  /** 活動タイトル */
+  title: string;
+
+  /** 活動内容 */
+  description: string;
+
+  /** 活動日 */
+  date: string;
+};
+
+/**
+ * 案件スケジュールの状態。
+ */
+export type ProjectMilestoneStatus =
+  | "planned"
+  | "completed";
+
+/**
+ * 案件のマイルストーン。
+ *
+ * 案件開始から納品までの主要予定を表示する。
+ */
+export type ProjectMilestone = {
+  id: number;
+
+  /** スケジュール名 */
+  title: string;
+
+  /** 予定日 */
+  date: string;
+
+  /** 完了状態 */
+  status: ProjectMilestoneStatus;
+};
+
+/**
+ * 案件詳細画面で使用するデータ。
+ *
+ * Project型を継承することで、
+ *
+ * id
+ * name
+ * customerId
+ * customerName
+ * status
+ * priority
+ * amount
+ * startDate
+ * dueDate
+ * progress
+ *
+ * をそのまま利用できる。
+ *
+ * 「&」を利用して、
+ * 詳細画面専用データを追加している。
+ */
+export type ProjectDetail = Project & {
+  /** 案件種別 */
+  type: string;
+
+  /** 社内担当者 */
+  ownerName: string;
+
+  /** 案件概要 */
+  description: string;
+
+  /**
+   * 補足メモ。
+   *
+   * 登録されていない場合があるため
+   * nullも許可する。
+   */
+  notes: string | null;
+
+  /** 関連タスク */
+  tasks: ProjectTask[];
+
+  /** 活動履歴 */
+  activities: ProjectActivity[];
+
+  /** 案件スケジュール */
+  milestones: ProjectMilestone[];
+};
