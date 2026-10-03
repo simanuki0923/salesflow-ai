@@ -239,3 +239,106 @@ export type ProjectDetail = Project & {
   /** 案件スケジュール */
   milestones: ProjectMilestone[];
 };
+
+/**
+ * 案件登録・編集フォームで使用する入力値。
+ *
+ * HTMLのinput要素から取得する値は基本的にstringなので、
+ * amountやprogressもフォームState上ではstringとして保持する。
+ *
+ * Laravel APIへ送信するときに、
+ *
+ * amount
+ * progress
+ * customerId
+ *
+ * をnumberへ変換する予定。
+ */
+export type ProjectFormData = {
+  /** 案件名 */
+  name: string;
+
+  /**
+   * 顧客ID。
+   *
+   * select要素のvalueはstringとして取得されるため、
+   * フォーム内ではstringとして保持する。
+   */
+  customerId: string;
+
+  /** 案件種別 */
+  type: string;
+
+  /** 社内担当者 */
+  ownerName: string;
+
+  /** 案件ステータス */
+  status: ProjectStatus;
+
+  /** 優先度 */
+  priority: ProjectPriority;
+
+  /**
+   * 案件金額。
+   *
+   * HTML inputとの相性を考えてstringで保持する。
+   */
+  amount: string;
+
+  /** 開始日 */
+  startDate: string;
+
+  /** 期限 */
+  dueDate: string;
+
+  /**
+   * 進捗率。
+   *
+   * 0〜100を想定する。
+   */
+  progress: string;
+
+  /** 案件概要 */
+  description: string;
+
+  /** 補足メモ */
+  notes: string;
+};
+
+/**
+ * ProjectFormをどの用途で使用するか。
+ *
+ * create:
+ *   案件新規登録
+ *
+ * edit:
+ *   案件編集
+ */
+export type ProjectFormMode =
+  | "create"
+  | "edit";
+
+/**
+ * ProjectFormのValidationエラー。
+ *
+ * Partialを利用することで、
+ * エラーが発生した項目だけ保持できる。
+ *
+ * keyof ProjectFormDataにより、
+ * ProjectFormDataに存在する項目名だけが
+ * エラーのキーとして使用できる。
+ */
+export type ProjectFormErrors = Partial<
+  Record<keyof ProjectFormData, string>
+>;
+
+/**
+ * 顧客選択selectで使用する最小限の顧客情報。
+ *
+ * 顧客一覧のCustomer型全体をProjectFormへ渡す必要はないため、
+ * idとnameだけを使用する。
+ */
+export type ProjectCustomerOption = {
+  id: number;
+  name: string;
+};
