@@ -1,0 +1,28 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: salesflow-postgres
+
+    restart: unless-stopped
+
+    environment:
+      # ローカル開発用データベース名
+      POSTGRES_DB: salesflow_ai
+
+      # ローカル開発用ユーザー
+      POSTGRES_USER: salesflow
+
+      # ローカル開発専用パスワード
+      # 本番環境では別の安全な値を使用する
+      POSTGRES_PASSWORD: salesflow_local
+
+    ports:
+      # WSL上のLaravelからlocalhost:5432で接続する
+      - "5432:5432"
+
+    volumes:
+      # コンテナを削除してもDBデータを保持する
+      - salesflow_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  salesflow_postgres_data:
