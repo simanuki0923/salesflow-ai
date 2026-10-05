@@ -1,19 +1,20 @@
 <?php
 
 use App\Http\Controllers\Api\V1\CustomerController;
+use App\Http\Controllers\Api\V1\ProjectController;
 use Illuminate\Support\Facades\Route;
 
 /**
  * SalesFlow AI REST API。
  *
- * routes/api.phpにはLaravelによって
+ * Laravelによってroutes/api.phpへ
  * /api Prefixが自動付与される。
  *
- * このv1 Groupによって、
+ * さらにv1 Prefixを追加して、
  *
  * /api/v1/...
  *
- * というURL構成になる。
+ * へ統一する。
  */
 Route::prefix('v1')
     ->name('api.v1.')
@@ -33,20 +34,25 @@ Route::prefix('v1')
 
         /**
          * Customer REST API。
-         *
-         * apiResource()により、
-         *
-         * GET    /customers
-         * POST   /customers
-         * GET    /customers/{customer}
-         * PUT    /customers/{customer}
-         * PATCH  /customers/{customer}
-         * DELETE /customers/{customer}
-         *
-         * がまとめて作成される。
          */
         Route::apiResource(
             'customers',
             CustomerController::class,
+        );
+
+        /**
+         * Project REST API。
+         *
+         * GET
+         * POST
+         * GET /{project}
+         * PUT/PATCH /{project}
+         * DELETE /{project}
+         *
+         * を生成する。
+         */
+        Route::apiResource(
+            'projects',
+            ProjectController::class,
         );
     });
