@@ -1,4 +1,6 @@
-import { apiRequest } from "@/lib/api/client";
+import {
+  apiRequest,
+} from "@/lib/api/client";
 
 import type {
   ApiCollectionResponse,
@@ -14,7 +16,10 @@ import type {
 } from "@/types/project";
 
 /**
- * Laravel ProjectResource Response。
+ * Laravel ProjectResourceが返すJSON。
+ *
+ * PostgreSQLではsnake_caseだが、
+ * ProjectResourceでcamelCaseへ変換済み。
  */
 export type ProjectApiData = {
   id: number;
@@ -22,6 +27,7 @@ export type ProjectApiData = {
   name: string;
 
   customerId: number;
+
   customerName: string;
 
   type: string | null;
@@ -29,36 +35,45 @@ export type ProjectApiData = {
   ownerName: string;
 
   status: ProjectStatus;
+
   priority: ProjectPriority;
 
   amount: number;
 
   startDate: string;
+
   dueDate: string;
 
   progress: number;
 
   description: string | null;
+
   notes: string | null;
 
   createdAt: string;
+
   updatedAt: string;
 };
 
 /**
- * Project検索条件。
+ * Project一覧取得条件。
  */
 export type ProjectQuery = {
   customerId?: number;
+
   status?: ProjectStatus;
+
   priority?: ProjectPriority;
+
   search?: string;
+
   perPage?: number;
+
+  page?: number;
 };
 
 /**
- * Query Objectから
- * URLSearchParamsを作成する。
+ * Project検索条件をQuery Stringへ変換する。
  */
 function buildProjectQuery(
   query: ProjectQuery,
@@ -66,21 +81,27 @@ function buildProjectQuery(
   const params =
     new URLSearchParams();
 
-  if (query.customerId !== undefined) {
+  if (
+    query.customerId !== undefined
+  ) {
     params.set(
       "customerId",
       String(query.customerId),
     );
   }
 
-  if (query.status !== undefined) {
+  if (
+    query.status !== undefined
+  ) {
     params.set(
       "status",
       query.status,
     );
   }
 
-  if (query.priority !== undefined) {
+  if (
+    query.priority !== undefined
+  ) {
     params.set(
       "priority",
       query.priority,
@@ -93,7 +114,7 @@ function buildProjectQuery(
   ) {
     params.set(
       "search",
-      query.search,
+      query.search.trim(),
     );
   }
 
@@ -102,20 +123,31 @@ function buildProjectQuery(
     String(query.perPage ?? 100),
   );
 
+  if (
+    query.page !== undefined
+  ) {
+    params.set(
+      "page",
+      String(query.page),
+    );
+  }
+
   return params.toString();
 }
 
 /**
- * Project API Dataを
- * 一覧表示用Projectへ変換する。
+ * Laravel Project API Dataを、
+ * 既存Project一覧UI用型へ変換する。
  */
 export function mapProject(
   project: ProjectApiData,
 ): Project {
   return {
-    id: project.id,
+    id:
+      project.id,
 
-    name: project.name,
+    name:
+      project.name,
 
     customerId:
       project.customerId,
@@ -149,13 +181,15 @@ export function mapProject(
 export async function getProjects(
   query: ProjectQuery = {},
 ): Promise<ProjectApiData[]> {
-  const search =
+  const queryString =
     buildProjectQuery(query);
 
   const response =
     await apiRequest<
       ApiCollectionResponse<ProjectApiData>
-    >(`/projects?${search}`);
+    >(
+      `/projects?${queryString}`,
+    );
 
   return response.data;
 }
@@ -169,23 +203,27 @@ export async function getProject(
   const response =
     await apiRequest<
       ApiResourceResponse<ProjectApiData>
-    >(`/projects/${id}`);
+    >(
+      `/projects/${id}`,
+    );
 
   return response.data;
 }
 
 /**
- * ProjectDetail UIへ変換する。
+ * Laravel APIのProjectを、
+ * Project詳細画面用型へ変換する。
  *
- * Task / Activity / Milestoneは、
- * まだLaravel APIを実装していないため
- * 現段階では空配列とする。
+ * Task / Activity / Milestoneは
+ * まだAPI未実装のため空配列とする。
  */
 export function mapProjectDetail(
   project: ProjectApiData,
 ): ProjectDetail {
   return {
-    ...mapProject(project),
+    ...mapProject(
+      project,
+    ),
 
     type:
       project.type ?? "",
@@ -200,35 +238,44 @@ export function mapProjectDetail(
       project.notes,
 
     tasks: [],
+
     activities: [],
+
     milestones: [],
   };
 }
 
 /**
- * ProjectFormDataから
- * Laravel API Payloadへ変換する。
+ * HTML Form用ProjectFormDataを、
+ * Laravel APIが期待するPayloadへ変換する。
  *
- * HTML Formでは数値もstringとして保持しているため、
- * API送信直前にnumberへ変換する。
+ * Formではstringで管理している、
+ *
+ * customerId
+ * amount
+ * progress
+ *
+ * をここでnumberへ変換する。
  */
 function createProjectPayload(
   formData: ProjectFormData,
 ) {
   return {
     name:
-      formData.name,
+      formData.name.trim(),
 
     customerId:
-      Number(formData.customerId),
+      Number(
+        formData.customerId,
+      ),
 
     type:
       formData.type.trim() === ""
         ? null
-        : formData.type,
+        : formData.type.trim(),
 
     ownerName:
-      formData.ownerName,
+      formData.ownerName.trim(),
 
     status:
       formData.status,
@@ -237,7 +284,9 @@ function createProjectPayload(
       formData.priority,
 
     amount:
-      Number(formData.amount),
+      Number(
+        formData.amount,
+      ),
 
     startDate:
       formData.startDate,
@@ -246,22 +295,26 @@ function createProjectPayload(
       formData.dueDate,
 
     progress:
-      Number(formData.progress),
+      Number(
+        formData.progress,
+      ),
 
     description:
       formData.description.trim() === ""
         ? null
-        : formData.description,
+        : formData.description.trim(),
 
     notes:
       formData.notes.trim() === ""
         ? null
-        : formData.notes,
+        : formData.notes.trim(),
   };
 }
 
 /**
- * Project登録。
+ * Project新規登録。
+ *
+ * POST /api/v1/projects
  */
 export async function createProject(
   formData: ProjectFormData,
@@ -287,6 +340,8 @@ export async function createProject(
 
 /**
  * Project更新。
+ *
+ * PATCH /api/v1/projects/{id}
  */
 export async function updateProject(
   id: number,

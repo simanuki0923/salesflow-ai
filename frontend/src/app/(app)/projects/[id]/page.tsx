@@ -1,24 +1,37 @@
 import { notFound } from "next/navigation";
 
-import ProjectActivity from "@/components/projects/ProjectActivity";
-import ProjectDetailHeader from "@/components/projects/ProjectDetailHeader";
-import ProjectOverview from "@/components/projects/ProjectOverview";
-import ProjectTasks from "@/components/projects/ProjectTasks";
+import ProjectActivity
+  from "@/components/projects/ProjectActivity";
 
-import { findProjectDetailById } from "@/lib/mock/projectDetails";
+import ProjectDetailHeader
+  from "@/components/projects/ProjectDetailHeader";
+
+import ProjectOverview
+  from "@/components/projects/ProjectOverview";
+
+import ProjectTasks
+  from "@/components/projects/ProjectTasks";
+
+import {
+  ApiError,
+} from "@/lib/api/client";
+
+import {
+  getProject,
+  mapProjectDetail,
+} from "@/lib/api/projects";
 
 /**
- * Dynamic Routeから受け取るURLパラメータ。
+ * Project詳細ではPostgreSQLの最新状態を表示する。
  *
- * 例：
- *
- * /projects/1
- *
- * ↓
- *
- * id = "1"
- *
- * Next.js 16ではparamsをPromiseとして扱う。
+ * Static Generationで固定せず、
+ * Request時にLaravel APIから取得する。
+ */
+export const dynamic = "force-dynamic";
+
+/**
+ * Next.js 16 App Routerでは、
+ * Dynamic RouteのparamsをPromiseとして受け取る。
  */
 type ProjectDetailPageProps = {
   params: Promise<{
@@ -27,39 +40,45 @@ type ProjectDetailPageProps = {
 };
 
 /**
- * SalesFlow AI 案件詳細ページ。
+ * Project詳細ページ。
  *
- * URLから案件IDを取得し、
- * 対象案件の詳細情報を表示する。
+ * データの流れ：
  *
- * 現在：
- *
- * Mock Data
- *
- * ↓
- *
- * 将来：
- *
+ * URL /projects/{id}
+ *      ↓
+ * getProject()
+ *      ↓
  * Laravel
  * GET /api/v1/projects/{id}
- *
- * へ変更する。
+ *      ↓
+ * PostgreSQL
+ *      ↓
+ * mapProjectDetail()
+ *      ↓
+ * 各表示Component
  */
 export default async function ProjectDetailPage({
   params,
 }: ProjectDetailPageProps) {
   /**
-   * Dynamic Routeのパラメータを取得する。
+   * URL Parameterを取得する。
+   *
+   * 例：
+   *
+   * /projects/10
+   *
+   * ↓
+   *
+   * id = "10"
    */
   const { id } = await params;
 
-  /**
-   * URLパラメータはstringなのでnumberへ変換。
-   */
-  const projectId = Number(id);
+  const projectId =
+    Number(id);
 
   /**
-   * 正の整数ではないIDの場合は404。
+   * 数字として成立しないIDは、
+   * Laravel APIへ送らずNext.js側で404にする。
    */
   if (
     !Number.isInteger(projectId) ||
@@ -69,131 +88,109 @@ export default async function ProjectDetailPage({
   }
 
   /**
-   * 現在はMockデータから案件を取得する。
+   * try/catchでは、
+   * Laravel API通信だけを扱う。
+   *
+   * JSXをtry/catchへ含めないことが重要。
    */
-  const project =
-    findProjectDetailById(projectId);
+  let apiProject;
 
-  /**
-   * 案件が存在しない場合も404。
-   */
-  if (!project) {
-    notFound();
+  try {
+    apiProject =
+      await getProject(
+        projectId,
+      );
+  } catch (error) {
+    /**
+     * Laravel Route Model Bindingで
+     * Projectが存在しない場合は404になる。
+     *
+     * Laravel 404
+     * ↓
+     * Next.js notFound()
+     */
+    if (
+      error instanceof ApiError &&
+      error.status === 404
+    ) {
+      notFound();
+    }
+
+    /**
+     * Laravel停止、
+     * Network Error、
+     * 500 Errorなどは
+     * Next.js側のError処理へ渡す。
+     */
+    throw error;
   }
 
+  /**
+   * API取得成功後に、
+   * Project詳細画面用の型へ変換する。
+   *
+   * 現在まだAPI未実装の、
+   *
+   * tasks
+   * activities
+   * milestones
+   *
+   * はmapProjectDetail()内で空配列になる。
+   */
+  const project =
+    mapProjectDetail(
+      apiProject,
+    );
+
+  /**
+   * JSXはtry/catchの外で生成する。
+   *
+   * React ComponentのRendering Errorは、
+   * API Requestのtry/catchで捕捉するものではない。
+   */
   return (
     <div className="space-y-6">
-
-      {/* =====================================================
-       * 案件詳細Header
-       * ===================================================== */}
+      {/* 案件名・顧客名・編集ボタン等 */}
       <ProjectDetailHeader
         project={project}
       />
 
+      {/* 金額・進捗・期間・案件概要 */}
+      <ProjectOverview
+        project={project}
+      />
 
-      {/* =====================================================
-       * 画面内Navigation
-       *
-       * 現段階では同一ページ内のSectionへ移動する。
-       * ===================================================== */}
-      <nav className="overflow-x-auto rounded-2xl border border-slate-200 bg-white px-4 shadow-sm">
+      <div className="grid gap-6 xl:grid-cols-2">
+        {/*
+         * Task APIは今後実装する。
+         * 現段階では空配列を受け取る。
+         */}
+        <ProjectTasks
+          tasks={project.tasks}
+        />
 
-        <div className="flex min-w-max gap-2">
+        {/*
+         * Activity APIも今後実装する。
+         */}
+        <ProjectActivity
+          activities={
+            project.activities
+          }
+        />
+      </div>
 
-          <a
-            href="#overview"
-            className="border-b-2 border-blue-600 px-4 py-4 text-sm font-semibold text-blue-600"
-          >
-            基本情報
-          </a>
-
-          <a
-            href="#tasks"
-            className="border-b-2 border-transparent px-4 py-4 text-sm font-semibold text-slate-500 transition hover:text-blue-600"
-          >
-            タスク
-          </a>
-
-          <a
-            href="#activity"
-            className="border-b-2 border-transparent px-4 py-4 text-sm font-semibold text-slate-500 transition hover:text-blue-600"
-          >
-            活動履歴
-          </a>
-
-          <a
-            href="#notes"
-            className="border-b-2 border-transparent px-4 py-4 text-sm font-semibold text-slate-500 transition hover:text-blue-600"
-          >
+      {/* メモが登録されている場合だけ表示する */}
+      {project.notes && (
+        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <h2 className="text-lg font-bold text-slate-900">
             メモ
-          </a>
+          </h2>
 
-        </div>
-      </nav>
-
-
-      {/* =====================================================
-       * Detail Layout
-       *
-       * PC：
-       * 左を広めにした2Column
-       *
-       * Mobile：
-       * 1Column
-       * ===================================================== */}
-      <section className="grid gap-6 xl:grid-cols-[1.35fr_1fr]">
-
-        {/* 左Column */}
-        <div className="space-y-6">
-
-          {/* 案件概要・進捗・Schedule */}
-          <ProjectOverview
-            project={project}
-          />
-
-          {/* 関連Task */}
-          <ProjectTasks
-            tasks={project.tasks}
-          />
-
-        </div>
-
-
-        {/* 右Column */}
-        <div className="space-y-6">
-
-          {/* Activity */}
-          <ProjectActivity
-            activities={
-              project.activities
-            }
-          />
-
-
-          {/* =================================================
-           * Memo
-           * ================================================= */}
-          <section
-            id="notes"
-            className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
-          >
-
-            <h2 className="text-xl font-bold text-slate-900">
-              メモ
-            </h2>
-
-            <p className="mt-4 whitespace-pre-wrap text-sm leading-7 text-slate-600">
-              {project.notes ??
-                "メモは登録されていません。"}
-            </p>
-
-          </section>
-
-        </div>
-
-      </section>
-
+          <p className="mt-4 whitespace-pre-wrap text-sm leading-7 text-slate-600">
+            {project.notes}
+          </p>
+        </section>
+      )}
     </div>
   );
 }
