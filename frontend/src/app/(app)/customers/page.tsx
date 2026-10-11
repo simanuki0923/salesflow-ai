@@ -2,50 +2,69 @@ import Link from "next/link";
 import { Plus } from "lucide-react";
 
 import CustomerListClient from "@/components/customers/CustomerListClient";
-import { customers } from "@/lib/mock/customers";
+
+import {
+  getCustomers,
+  mapCustomer,
+} from "@/lib/api/customers";
 
 /**
- * SalesFlow AI 顧客管理一覧ページ。
+ * Customer一覧はPostgreSQLの最新データを表示したい。
  *
- * このページ自体はServer Componentとして実装する。
- *
- * 検索・フィルターなどブラウザ側の操作が必要な部分だけを
- * CustomerListClientへ分離している。
- *
- * 将来的には、
- *
- * Laravel API
- * GET /api/v1/customers
- *
- * から取得した顧客データを
- * CustomerListClientへ渡す構成に変更する。
+ * force-dynamicを指定することで、
+ * Build時に固定されたStatic HTMLを使うのではなく、
+ * Request時にLaravel APIから最新データを取得する。
  */
-export default function CustomersPage() {
+export const dynamic = "force-dynamic";
+
+/**
+ * Customer一覧ページ。
+ *
+ * データの流れ：
+ *
+ * PostgreSQL
+ *     ↓
+ * Laravel
+ * GET /api/v1/customers
+ *     ↓
+ * getCustomers()
+ *     ↓
+ * mapCustomer()
+ *     ↓
+ * CustomerListClient
+ */
+export default async function CustomersPage() {
+  /**
+   * Laravel APIからCustomer一覧を取得する。
+   *
+   * この時点ではLaravel Resource形式の
+   * CustomerApiData[] が返ってくる。
+   */
+  const apiCustomers =
+    await getCustomers(100);
+
+  /**
+   * Laravel API用の型から、
+   * 既存CustomerListClientが使用している
+   * Customer型へ変換する。
+   */
+  const customers =
+    apiCustomers.map(mapCustomer);
+
   return (
     <div className="space-y-6">
-
-      {/* =====================================================
-       * ページ上部
-       * ===================================================== */}
+      {/* ページタイトルと新規登録ボタン */}
       <section className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-
-        {/* ページタイトル */}
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-slate-900">
             顧客管理
           </h1>
 
           <p className="mt-2 text-sm text-slate-500">
-            顧客情報や関連案件を管理します。
+            顧客情報と取引状況を管理します。
           </p>
         </div>
 
-        {/*
-         * 顧客新規登録画面へ遷移する。
-         *
-         * Next.jsのLinkを使用することで、
-         * 通常の<a>タグより効率よくページ遷移できる。
-         */}
         <Link
           href="/customers/new"
           className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700"
@@ -56,14 +75,17 @@ export default function CustomersPage() {
         </Link>
       </section>
 
-
-      {/* =====================================================
-       * 顧客一覧
+      {/*
+       * 検索・Status Filter・Paginationなどの
+       * UI操作はClient Component側へ任せる。
        *
-       * 現段階ではMockデータを渡している。
-       * ===================================================== */}
-      <CustomerListClient customers={customers} />
-
+       * データ取得はServer Component、
+       * UI操作はClient Component、
+       * という責務分離。
+       */}
+      <CustomerListClient
+        customers={customers}
+      />
     </div>
   );
 }

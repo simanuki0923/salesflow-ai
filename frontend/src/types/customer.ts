@@ -1,58 +1,56 @@
+import type {
+  ProjectStatus,
+} from "@/types/project";
+
 /**
- * 顧客の取引状態。
+ * Customerの利用状態。
  *
  * active:
- *   現在取引中の顧客
+ *   現在取引中
  *
  * inactive:
- *   現在は取引を停止している顧客
- *
- * Union型にすることで、
- * 想定外のステータス値が入ることを防止する。
+ *   取引停止・休止
  */
 export type CustomerStatus =
   | "active"
   | "inactive";
 
 /**
- * 顧客一覧画面で使用する基本的な顧客情報。
- *
- * 将来的にはLaravel側のCustomerResourceから返す
- * JSONレスポンスと同じ構造に揃える予定。
+ * Customer一覧画面で使用する基本情報。
  */
 export type Customer = {
-  /** 顧客ID */
   id: number;
 
-  /** 会社名・顧客名 */
   name: string;
 
-  /** 担当者名 */
   contactName: string;
 
-  /** メールアドレス */
   email: string;
 
-  /** 電話番号 */
   phone: string;
 
-  /** 顧客に紐づいている案件数 */
+  /**
+   * Customerに紐づくProject件数。
+   *
+   * Laravel側ではwithCount('projects')から取得する。
+   */
   projectCount: number;
 
-  /** 最終連絡日 */
+  /**
+   * 最終対応日。
+   *
+   * Laravel APIではYYYY-MM-DD形式。
+   */
   lastContactDate: string;
 
-  /** 顧客状態 */
   status: CustomerStatus;
 };
 
 /**
- * 顧客に設定するタグ情報。
+ * Customerへ設定されるTag。
  *
- * 例：
- * ・重要顧客
- * ・継続取引
- * ・Web制作
+ * Tag APIはまだ未実装なので、
+ * 現段階では型だけ残している。
  */
 export type CustomerTag = {
   id: number;
@@ -60,41 +58,41 @@ export type CustomerTag = {
 };
 
 /**
- * 顧客に紐づく案件の状態。
+ * Customer詳細画面に表示するProject Status。
  *
- * 後ほど案件管理機能を本格実装するときに、
- * Project型へ共通化する予定。
+ * 以前は、
+ *
+ * proposal
+ * in_progress
+ * completed
+ *
+ * の3種類だけだった。
+ *
+ * 現在はLaravel Project APIと接続するため、
+ * Project本体と同じProjectStatusを利用する。
  */
 export type CustomerProjectStatus =
-  | "proposal"
-  | "in_progress"
-  | "completed";
+  ProjectStatus;
 
 /**
- * 顧客詳細画面へ表示する関連案件の概要。
+ * Customer詳細画面に表示するProject概要。
  */
 export type CustomerProject = {
   id: number;
+
   name: string;
+
   status: CustomerProjectStatus;
+
   amount: number;
+
   dueDate: string;
 };
 
 /**
- * 顧客との活動履歴の種類。
+ * Customer Activity種別。
  *
- * meeting:
- *   商談
- *
- * call:
- *   電話
- *
- * email:
- *   メール
- *
- * note:
- *   その他の記録
+ * Activity APIは今後実装予定。
  */
 export type CustomerActivityType =
   | "meeting"
@@ -103,108 +101,84 @@ export type CustomerActivityType =
   | "note";
 
 /**
- * 顧客との活動履歴。
+ * Customer Activity。
  */
 export type CustomerActivity = {
   id: number;
+
   type: CustomerActivityType;
+
   title: string;
+
   description: string;
+
   date: string;
 };
 
 /**
- * 顧客詳細画面で使用するデータ。
+ * Customer詳細画面で利用する型。
  *
- * Customer型を継承することで、
+ * Customer基本情報へ、
  *
- * id
- * name
- * contactName
- * email
- * phone
- * projectCount
- * lastContactDate
- * status
+ * ・カナ
+ * ・住所
+ * ・業種
+ * ・Webサイト
+ * ・メモ
+ * ・Tag
+ * ・Project
+ * ・Activity
  *
- * をそのまま使用できる。
- *
- * & を利用して詳細画面固有の情報を追加している。
+ * を追加している。
  */
-export type CustomerDetail = Customer & {
-  /** 会社名カナ */
-  nameKana: string;
+export type CustomerDetail =
+  Customer & {
+    nameKana: string;
 
-  /** 担当者名カナ */
-  contactNameKana: string;
+    contactNameKana: string;
 
-  /** 郵便番号 */
-  postalCode: string;
+    postalCode: string;
 
-  /** 住所 */
-  address: string;
+    address: string;
 
-  /** 業種 */
-  industry: string;
+    industry: string;
 
-  /**
-   * WebサイトURL。
-   *
-   * 未登録の場合はnullを許可する。
-   */
-  website: string | null;
+    website: string | null;
 
-  /**
-   * 顧客メモ。
-   *
-   * 未登録の場合はnullを許可する。
-   */
-  memo: string | null;
+    memo: string | null;
 
-  /** 顧客タグ */
-  tags: CustomerTag[];
+    tags: CustomerTag[];
 
-  /** 関連案件 */
-  projects: CustomerProject[];
+    projects: CustomerProject[];
 
-  /** 活動履歴 */
-  activities: CustomerActivity[];
-};
+    activities: CustomerActivity[];
+  };
 
 /**
- * 顧客登録・編集フォームで使用する入力値。
+ * Customer登録・編集Formで管理するデータ。
  *
- * 新規登録と編集で同じデータ構造を使用するため、
- * CustomerFormDataとして共通化する。
- *
- * 将来的にはLaravel APIへ
- *
- * POST /api/v1/customers
- * PUT  /api/v1/customers/{id}
- *
- * を送信するときにも利用する。
+ * input要素と相性を良くするため、
+ * nullableなDB項目もForm内では空文字で保持する。
  */
 export type CustomerFormData = {
   name: string;
+
   nameKana: string;
 
   contactName: string;
+
   contactNameKana: string;
 
   email: string;
+
   phone: string;
 
   postalCode: string;
+
   address: string;
 
   industry: string;
 
-  /**
-   * フォーム上では未入力を空文字で扱う。
-   *
-   * Laravel APIへ送信するときに
-   * 必要に応じてnullへ変換できる。
-   */
   website: string;
 
   status: CustomerStatus;
@@ -213,31 +187,24 @@ export type CustomerFormData = {
 };
 
 /**
- * CustomerFormを
+ * CustomerFormが、
  *
- * create:
- *   新規登録
+ * 新規登録なのか
+ * 編集なのか
  *
- * edit:
- *   編集
- *
- * のどちらで使用するかを表す。
+ * を判断するMode。
  */
-export type CustomerFormMode = "create" | "edit";
+export type CustomerFormMode =
+  | "create"
+  | "edit";
 
 /**
- * フォームのエラー情報。
- *
- * Partialを使用することで、
- * エラーが存在する項目だけ保持できる。
- *
- * 例：
- *
- * {
- *   name: "顧客名を入力してください",
- *   email: "メールアドレスの形式が正しくありません"
- * }
+ * Form項目単位のValidation Error。
  */
-export type CustomerFormErrors = Partial<
-  Record<keyof CustomerFormData, string>
->;
+export type CustomerFormErrors =
+  Partial<
+    Record<
+      keyof CustomerFormData,
+      string
+    >
+  >;

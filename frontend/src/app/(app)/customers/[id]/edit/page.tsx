@@ -1,23 +1,23 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
 
-import CustomerForm from "@/components/customers/CustomerForm";
-import { findCustomerDetailById } from "@/lib/mock/customerDetails";
+import CustomerForm
+  from "@/components/customers/CustomerForm";
 
-import type { CustomerFormData } from "@/types/customer";
+import {
+  ApiError,
+} from "@/lib/api/client";
 
-/**
- * Dynamic Routeのparams。
- *
- * /customers/1/edit
- *
- * の場合、
- *
- * id = "1"
- *
- * が渡される。
- */
+import {
+  getCustomer,
+} from "@/lib/api/customers";
+
+import type {
+  CustomerFormData,
+} from "@/types/customer";
+
+export const dynamic =
+  "force-dynamic";
+
 type CustomerEditPageProps = {
   params: Promise<{
     id: string;
@@ -25,114 +25,107 @@ type CustomerEditPageProps = {
 };
 
 /**
- * 顧客編集画面。
+ * Customer編集ページ。
  *
- * 既存顧客データを取得し、
- * CustomerFormへinitialDataとして渡す。
+ * Laravel APIから現在のCustomer情報を取得し、
+ * CustomerFormのinitialDataへ設定する。
  */
 export default async function CustomerEditPage({
   params,
 }: CustomerEditPageProps) {
-  /**
-   * URLパラメータ取得。
-   */
   const { id } = await params;
 
-  /**
-   * stringからnumberへ変換。
-   */
-  const customerId = Number(id);
+  const customerId =
+    Number(id);
 
-  /**
-   * 数値として不正なIDは404。
-   */
-  if (Number.isNaN(customerId)) {
+  if (
+    !Number.isInteger(
+      customerId,
+    ) ||
+    customerId <= 0
+  ) {
     notFound();
   }
 
-  /**
-   * 現段階ではMockデータから顧客を取得する。
-   *
-   * Laravel API完成後は、
-   *
-   * GET /api/v1/customers/{id}
-   *
-   * へ置き換える。
-   */
-  const customer =
-    findCustomerDetailById(customerId);
+  let customer;
 
-  /**
-   * 顧客が存在しない場合は404。
-   */
-  if (!customer) {
-    notFound();
+  try {
+    customer =
+      await getCustomer(
+        customerId,
+      );
+  } catch (error) {
+    if (
+      error instanceof ApiError &&
+      error.status === 404
+    ) {
+      notFound();
+    }
+
+    throw error;
   }
 
   /**
-   * CustomerDetailから
-   * CustomerFormDataへ変換する。
-   *
-   * CustomerDetailではwebsite/memoがnullの可能性があるが、
-   * HTMLフォームでは空文字として扱う。
+   * APIではnullableな項目を、
+   * HTML inputで扱いやすい空文字へ変換する。
    */
-  const initialData: CustomerFormData = {
-    name: customer.name,
-    nameKana: customer.nameKana,
+  const initialData:
+    CustomerFormData = {
+    name:
+      customer.name,
 
-    contactName: customer.contactName,
+    nameKana:
+      customer.nameKana ?? "",
+
+    contactName:
+      customer.contactName,
+
     contactNameKana:
-      customer.contactNameKana,
+      customer
+        .contactNameKana ?? "",
 
-    email: customer.email,
-    phone: customer.phone,
+    email:
+      customer.email,
 
-    postalCode: customer.postalCode,
-    address: customer.address,
+    phone:
+      customer.phone ?? "",
 
-    industry: customer.industry,
+    postalCode:
+      customer.postalCode ?? "",
 
-    website: customer.website ?? "",
+    address:
+      customer.address ?? "",
 
-    status: customer.status,
+    industry:
+      customer.industry ?? "",
 
-    memo: customer.memo ?? "",
+    website:
+      customer.website ?? "",
+
+    status:
+      customer.status,
+
+    memo:
+      customer.memo ?? "",
   };
 
   return (
     <div className="space-y-6">
-
-      {/* 顧客詳細へ戻る */}
-      <Link
-        href={`/customers/${customer.id}`}
-        className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 transition hover:text-blue-600"
-      >
-        <ArrowLeft size={17} />
-
-        顧客詳細へ戻る
-      </Link>
-
-
-      {/* ページタイトル */}
       <section>
         <h1 className="text-3xl font-bold tracking-tight text-slate-900">
-          顧客情報の編集
+          顧客情報を編集
         </h1>
 
         <p className="mt-2 text-sm text-slate-500">
-          {customer.name}
-          の登録情報を編集します。
+          登録されている顧客情報を変更します。
         </p>
       </section>
 
-
-      {/* 共通CustomerForm */}
       <CustomerForm
         mode="edit"
-        customerId={customer.id}
+        customerId={customerId}
         initialData={initialData}
       />
-
     </div>
   );
 }

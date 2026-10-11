@@ -1,11 +1,19 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
 
-import ProjectForm from "@/components/projects/ProjectForm";
+import ProjectForm
+  from "@/components/projects/ProjectForm";
 
-import { customers } from "@/lib/mock/customers";
-import { findProjectDetailById } from "@/lib/mock/projectDetails";
+import {
+  ApiError,
+} from "@/lib/api/client";
+
+import {
+  getCustomers,
+} from "@/lib/api/customers";
+
+import {
+  getProject,
+} from "@/lib/api/projects";
 
 import type {
   ProjectCustomerOption,
@@ -13,13 +21,13 @@ import type {
 } from "@/types/project";
 
 /**
- * Dynamic RouteのURLパラメータ。
- *
- * /projects/1/edit
- *
- * ↓
- *
- * id = "1"
+ * 編集画面では、
+ * PostgreSQLの最新Project / Customerを取得する。
+ */
+export const dynamic = "force-dynamic";
+
+/**
+ * Dynamic Route Props。
  */
 type ProjectEditPageProps = {
   params: Promise<{
@@ -28,28 +36,27 @@ type ProjectEditPageProps = {
 };
 
 /**
- * 案件編集画面。
+ * Project編集ページ。
  *
- * 既存ProjectDetailを取得して、
- * ProjectFormDataへ変換する。
+ * Project：
+ * GET /api/v1/projects/{id}
  *
- * ProjectFormをeditモードで再利用する。
+ * Customer一覧：
+ * GET /api/v1/customers
+ *
+ * を取得し、
+ * ProjectFormへ編集初期値として渡す。
  */
 export default async function ProjectEditPage({
   params,
 }: ProjectEditPageProps) {
-  /**
-   * Dynamic Route Parameter取得。
-   */
   const { id } = await params;
 
-  /**
-   * URL上のIDはstringなのでnumberへ変換。
-   */
-  const projectId = Number(id);
+  const projectId =
+    Number(id);
 
   /**
-   * 正の整数ではない場合は404。
+   * 不正なIDはAPIへ送らず404にする。
    */
   if (
     !Number.isInteger(projectId) ||
@@ -59,122 +66,163 @@ export default async function ProjectEditPage({
   }
 
   /**
-   * 現段階ではMockデータから
-   * 案件詳細を取得する。
+   * APIから取得したデータを、
+   * try/catch外でも利用するため
+   * 先に変数だけ宣言する。
    */
-  const project =
-    findProjectDetailById(projectId);
+  let project;
+  let customers;
 
-  /**
-   * 案件が存在しない場合は404。
-   */
-  if (!project) {
-    notFound();
+  try {
+    /**
+     * ProjectとCustomer一覧には
+     * データ依存関係がない。
+     *
+     * そのためPromise.all()で
+     * 同時に取得して待ち時間を短縮する。
+     */
+    [
+      project,
+      customers,
+    ] = await Promise.all([
+      getProject(projectId),
+
+      getCustomers(100),
+    ]);
+  } catch (error) {
+    /**
+     * Projectが存在しない場合。
+     */
+    if (
+      error instanceof ApiError &&
+      error.status === 404
+    ) {
+      notFound();
+    }
+
+    /**
+     * Laravel停止など、
+     * その他のErrorは上位へ渡す。
+     */
+    throw error;
   }
 
   /**
-   * ProjectFormに必要な
-   * 顧客選択データを作成する。
+   * ここから下はtry/catch外。
+   *
+   * React JSXをtry/catch内へ置かないことで、
+   * react-hooks/error-boundariesの
+   * ESLint Errorを回避する。
    */
-  const customerOptions: ProjectCustomerOption[] =
-    customers.map((customer) => ({
-      id: customer.id,
-      name: customer.name,
-    }));
 
   /**
-   * ProjectDetail
-   *
-   * ↓
-   *
-   * ProjectFormData
-   *
-   * へ変換する。
-   *
-   * amount / progress / customerIdは
-   * Formではstringとして扱うためString()で変換する。
-   *
-   * notesはnullの場合があるため空文字へ変換する。
+   * Customer API Dataを、
+   * ProjectFormのSelect用データへ変換する。
    */
-  const initialData: ProjectFormData = {
-    name: project.name,
+  const customerOptions:
+    ProjectCustomerOption[] =
+    customers.map(
+      (customer) => ({
+        id:
+          customer.id,
 
-    customerId: String(
-      project.customerId,
-    ),
+        name:
+          customer.name,
+      }),
+    );
 
-    type: project.type,
+  /**
+   * Laravel APIとHTML Formでは
+   * 一部の値の型が違う。
+   *
+   * API：
+   * customerId number
+   * amount number
+   * progress number
+   *
+   * Form：
+   * customerId string
+   * amount string
+   * progress string
+   *
+   * そのためFormへ渡す段階でstring化する。
+   */
+  const initialData:
+    ProjectFormData = {
+    name:
+      project.name,
 
-    ownerName: project.ownerName,
+    customerId:
+      String(
+        project.customerId,
+      ),
 
-    status: project.status,
+    type:
+      project.type ?? "",
 
-    priority: project.priority,
+    ownerName:
+      project.ownerName,
 
-    amount: String(project.amount),
+    status:
+      project.status,
 
-   /**
-     * MockデータではYYYY/MM/DD形式で保持しているが、
-     * <input type="date"> のvalueには
-     * YYYY-MM-DD形式が必要。
+    priority:
+      project.priority,
+
+    amount:
+      String(
+        project.amount,
+      ),
+
+    /**
+     * Laravel ProjectResourceは
+     * YYYY-MM-DD形式で返す。
      *
-     * そのため "/" を "-" へ変換して
-     * Formへ渡す。
+     * そのためinput type="date"へ
+     * そのまま渡せる。
      */
     startDate:
-      project.startDate.replaceAll(
-        "/",
-        "-",
-      ),
+      project.startDate,
 
     dueDate:
-      project.dueDate.replaceAll(
-        "/",
-        "-",
+      project.dueDate,
+
+    progress:
+      String(
+        project.progress,
       ),
-    
-    progress: String(
-      project.progress,
-    ),
 
     description:
-      project.description,
+      project.description ?? "",
 
-    notes: project.notes ?? "",
+    notes:
+      project.notes ?? "",
   };
 
+  /**
+   * JSXはtry/catchの外でReturnする。
+   */
   return (
     <div className="space-y-6">
-      {/* 案件詳細へ戻る */}
-      <Link
-        href={`/projects/${project.id}`}
-        className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 transition hover:text-blue-600"
-      >
-        <ArrowLeft size={17} />
-
-        案件詳細へ戻る
-      </Link>
-
-      {/* Header */}
       <section>
         <h1 className="text-3xl font-bold tracking-tight text-slate-900">
-          案件情報の編集
+          案件情報を編集
         </h1>
 
         <p className="mt-2 text-sm text-slate-500">
-          {project.name}
-          の登録情報を編集します。
+          登録されている案件情報を変更します。
         </p>
       </section>
 
-      {/* 共通ProjectForm */}
       <ProjectForm
         mode="edit"
-        projectId={project.id}
+        projectId={projectId}
         customerOptions={
           customerOptions
         }
-        initialData={initialData}
+        initialData={
+          initialData
+        }
       />
     </div>
   );
