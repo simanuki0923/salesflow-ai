@@ -4,6 +4,7 @@ namespace Tests\Feature\Api\V1;
 
 use App\Models\Customer;
 use App\Models\Project;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -12,12 +13,15 @@ use Tests\TestCase;
  *
  * 実際のHTTP Requestに近い形で、
  *
+ * ・認証済みUserによるAPIアクセス
  * ・一覧
  * ・登録
  * ・詳細
  * ・更新
  * ・削除
  * ・Validation
+ * ・User単位のData Scope
+ * ・他User DataへのAccess制御
  *
  * を確認する。
  */
@@ -26,10 +30,45 @@ class CustomerApiTest extends TestCase
     use RefreshDatabase;
 
     /**
+     * 各Testで使用するLogin User。
+     *
+     * Customer APIはauth:sanctumで保護されているため、
+     * APIへアクセスする前に認証済みUserを用意する。
+     */
+    private User $user;
+
+    /**
+     * 各Test実行前の共通準備。
+     */
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        /**
+         * Test用Userを作成する。
+         */
+        $this->user = User::factory()->create();
+
+        /**
+         * LaravelのSession Authenticationで
+         * Login済み状態にする。
+         *
+         * /api/v1/customersはauth:sanctumで
+         * 保護されているため、
+         * 未認証のままだと401になる。
+         */
+        $this->actingAs(
+            $this->user,
+        );
+    }
+
+    /**
      * Testで使用するCustomerを作成する。
      *
      * Factoryへ依存せず、
      * 現在のCustomer Modelだけで確認できるようにする。
+     *
+     * Login User自身が所有するCustomerとして作成する。
      *
      * @param  array<string, mixed>  $overrides
      */
@@ -39,19 +78,36 @@ class CustomerApiTest extends TestCase
         return Customer::create(
             array_merge(
                 [
-                    'user_id' => null,
+                    /**
+                     * Customer APIはUser単位でScopeされるため、
+                     * Test中のLogin Userを所有者に設定する。
+                     */
+                    'user_id' => $this->user->id,
+
                     'name' => '株式会社テスト',
+
                     'name_kana' => 'カブシキガイシャテスト',
+
                     'contact_name' => '山田 太郎',
+
                     'contact_name_kana' => 'ヤマダ タロウ',
+
                     'email' => 'test@example.com',
+
                     'phone' => '03-1234-5678',
+
                     'postal_code' => '100-0001',
+
                     'address' => '東京都千代田区',
+
                     'industry' => 'IT',
+
                     'website' => 'https://example.com',
+
                     'status' => 'active',
+
                     'last_contact_date' => '2026-10-01',
+
                     'memo' => 'API Test Customer',
                 ],
                 $overrides,
@@ -142,11 +198,16 @@ class CustomerApiTest extends TestCase
 
         /**
          * APIのcamelCaseが
-         * DBのsnake_caseへ正しく変換されたか確認。
+         * DBのsnake_caseへ正しく変換されたか確認する。
+         *
+         * さらにuser_idがFrontendからではなく、
+         * Login UserからBackend側で設定されたことも確認する。
          */
         $this->assertDatabaseHas(
             'customers',
             [
+                'user_id' => $this->user->id,
+
                 'name' => '新規株式会社',
 
                 'contact_name' => '佐藤 花子',
@@ -225,11 +286,16 @@ class CustomerApiTest extends TestCase
         /**
          * nameだけ変更し、
          * contact_name等が消えていないことも確認する。
+         *
+         * また、更新によってCustomerの所有者が
+         * 変更されていないことも確認する。
          */
         $this->assertDatabaseHas(
             'customers',
             [
                 'id' => $customer->id,
+
+                'user_id' => $this->user->id,
 
                 'name' => '更新後株式会社',
 
@@ -308,6 +374,190 @@ class CustomerApiTest extends TestCase
             'customers',
             [
                 'id' => $customer->id,
+            ],
+        );
+    }
+
+    /**
+     * 未認証UserはCustomer一覧を取得できない。
+     *
+     * routes/api.phpのauth:sanctumが
+     * 正しく機能していることを確認する。
+     */
+    public function test_guest_cannot_access_customer_list(): void
+    {
+        /**
+         * setUp()で作成したLogin状態を解除し、
+         * Guest状態に戻す。
+         */
+        auth()->logout();
+
+        $response = $this->getJson(
+            '/api/v1/customers',
+        );
+
+        $response->assertUnauthorized();
+    }
+
+    /**
+     * Customer一覧には
+     * Login User自身のCustomerだけ表示される。
+     */
+    public function test_customer_list_only_contains_authenticated_user_customers(): void
+    {
+        /**
+         * 現在LoginしているUserのCustomer。
+         */
+        $ownCustomer =
+            $this->createCustomer([
+                'name' => '自分の顧客',
+                'email' => 'own@example.com',
+            ]);
+
+        /**
+         * 別Userを作成する。
+         */
+        $otherUser =
+            User::factory()->create();
+
+        /**
+         * 別User所有Customer。
+         *
+         * createCustomer()は通常$this->userを設定するが、
+         * overridesで別Userへ差し替える。
+         */
+        $this->createCustomer([
+            'user_id' => $otherUser->id,
+            'name' => '他Userの顧客',
+            'email' => 'other@example.com',
+        ]);
+
+        $response = $this->getJson(
+            '/api/v1/customers',
+        );
+
+        /**
+         * Login User自身のCustomerだけが
+         * Responseへ含まれることを確認する。
+         */
+        $response
+            ->assertOk()
+            ->assertJsonCount(
+                1,
+                'data',
+            )
+            ->assertJsonPath(
+                'data.0.id',
+                $ownCustomer->id,
+            )
+            ->assertJsonPath(
+                'data.0.name',
+                '自分の顧客',
+            );
+    }
+
+    /**
+     * 他User所有Customerの詳細は取得できない。
+     */
+    public function test_cannot_get_other_users_customer(): void
+    {
+        $otherUser =
+            User::factory()->create();
+
+        $customer =
+            $this->createCustomer([
+                'user_id' => $otherUser->id,
+                'name' => '他Userの顧客',
+                'email' => 'other-detail@example.com',
+            ]);
+
+        $response = $this->getJson(
+            "/api/v1/customers/{$customer->id}",
+        );
+
+        /**
+         * 403ではなく404にすることで、
+         * Customerの存在自体を他Userへ公開しない。
+         */
+        $response->assertNotFound();
+    }
+
+    /**
+     * 他User所有Customerは更新できない。
+     */
+    public function test_cannot_update_other_users_customer(): void
+    {
+        $otherUser =
+            User::factory()->create();
+
+        $customer =
+            $this->createCustomer([
+                'user_id' => $otherUser->id,
+                'name' => '他Userの顧客',
+                'email' => 'other-update@example.com',
+            ]);
+
+        $response = $this->patchJson(
+            "/api/v1/customers/{$customer->id}",
+            [
+                'name' => '不正な更新',
+            ],
+        );
+
+        $response->assertNotFound();
+
+        /**
+         * HTTP Responseだけでなく、
+         * Databaseも変更されていないことを確認する。
+         */
+        $this->assertDatabaseHas(
+            'customers',
+            [
+                'id' => $customer->id,
+                'user_id' => $otherUser->id,
+                'name' => '他Userの顧客',
+            ],
+        );
+
+        $this->assertDatabaseMissing(
+            'customers',
+            [
+                'id' => $customer->id,
+                'name' => '不正な更新',
+            ],
+        );
+    }
+
+    /**
+     * 他User所有Customerは削除できない。
+     */
+    public function test_cannot_delete_other_users_customer(): void
+    {
+        $otherUser =
+            User::factory()->create();
+
+        $customer =
+            $this->createCustomer([
+                'user_id' => $otherUser->id,
+                'name' => '他Userの削除対象顧客',
+                'email' => 'other-delete@example.com',
+            ]);
+
+        $response = $this->deleteJson(
+            "/api/v1/customers/{$customer->id}",
+        );
+
+        $response->assertNotFound();
+
+        /**
+         * 削除が拒否されたため、
+         * CustomerがDatabaseに残っていることを確認する。
+         */
+        $this->assertDatabaseHas(
+            'customers',
+            [
+                'id' => $customer->id,
+                'user_id' => $otherUser->id,
             ],
         );
     }

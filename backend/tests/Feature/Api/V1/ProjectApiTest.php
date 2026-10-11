@@ -4,12 +4,14 @@ namespace Tests\Feature\Api\V1;
 
 use App\Models\Customer;
 use App\Models\Project;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 /**
  * Project REST APIのFeature Test。
  *
+ * ・認証済みUserによるAPIアクセス
  * ・一覧
  * ・検索
  * ・Filter
@@ -18,6 +20,8 @@ use Tests\TestCase;
  * ・詳細
  * ・部分更新
  * ・削除
+ * ・User単位のData Scope
+ * ・他User DataへのAccess制御
  *
  * をHTTP Request単位で確認する。
  */
@@ -26,7 +30,39 @@ class ProjectApiTest extends TestCase
     use RefreshDatabase;
 
     /**
+     * 各Testで使用するLogin User。
+     */
+    private User $user;
+
+    /**
+     * 各Test実行前の共通準備。
+     *
+     * Project APIはauth:sanctumで保護されているため、
+     * Test用Userを作成してLogin状態にする。
+     */
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->user = User::factory()->create();
+
+        $this->actingAs(
+            $this->user,
+        );
+    }
+
+    /**
      * Test用Customerを作成する。
+     *
+     * Projectには直接user_idを持たせず、
+     *
+     * Project
+     * ↓
+     * Customer
+     * ↓
+     * User
+     *
+     * の関係から所有者を判断する。
      *
      * @param  array<string, mixed>  $overrides
      */
@@ -36,7 +72,13 @@ class ProjectApiTest extends TestCase
         return Customer::create(
             array_merge(
                 [
-                    'user_id' => null,
+                    /**
+                     * 通常はLogin User所有Customerとして作成する。
+                     *
+                     * 他User用Testではoverridesによって
+                     * user_idを差し替える。
+                     */
+                    'user_id' => $this->user->id,
 
                     'name' => '株式会社テスト',
 
@@ -199,9 +241,7 @@ class ProjectApiTest extends TestCase
             $customer,
             [
                 'name' => '対象案件',
-
                 'status' => 'in_progress',
-
                 'priority' => 'high',
             ],
         );
@@ -210,9 +250,7 @@ class ProjectApiTest extends TestCase
             $customer,
             [
                 'name' => '対象外案件',
-
                 'status' => 'completed',
-
                 'priority' => 'low',
             ],
         );
@@ -525,6 +563,353 @@ class ProjectApiTest extends TestCase
             'projects',
             [
                 'id' => $project->id,
+            ],
+        );
+    }
+
+    /**
+     * 未認証UserはProject一覧を取得できない。
+     *
+     * routes/api.phpのauth:sanctumが
+     * 正しく機能していることを確認する。
+     */
+    public function test_guest_cannot_access_project_list(): void
+    {
+        /**
+         * setUp()で作成したLogin状態を解除する。
+         */
+        auth()->logout();
+
+        $response = $this->getJson(
+            '/api/v1/projects',
+        );
+
+        $response->assertUnauthorized();
+    }
+
+    /**
+     * Project一覧には
+     * Login User自身のProjectだけ表示される。
+     */
+    public function test_project_list_only_contains_authenticated_user_projects(): void
+    {
+        /**
+         * Login User所有CustomerとProject。
+         */
+        $ownCustomer =
+            $this->createCustomer([
+                'name' => '自分の顧客',
+                'email' => 'own-project@example.com',
+            ]);
+
+        $ownProject =
+            $this->createProject(
+                $ownCustomer,
+                [
+                    'name' => '自分の案件',
+                ],
+            );
+
+        /**
+         * 別Userを作成する。
+         */
+        $otherUser =
+            User::factory()->create();
+
+        /**
+         * 別User所有Customer。
+         */
+        $otherCustomer =
+            $this->createCustomer([
+                'user_id' => $otherUser->id,
+                'name' => '他Userの顧客',
+                'email' => 'other-project@example.com',
+            ]);
+
+        /**
+         * 別User所有Customerに紐付くProject。
+         */
+        $this->createProject(
+            $otherCustomer,
+            [
+                'name' => '他Userの案件',
+            ],
+        );
+
+        $response = $this->getJson(
+            '/api/v1/projects',
+        );
+
+        /**
+         * Login User所有Projectだけが
+         * Responseへ含まれることを確認する。
+         */
+        $response
+            ->assertOk()
+            ->assertJsonCount(
+                1,
+                'data',
+            )
+            ->assertJsonPath(
+                'data.0.id',
+                $ownProject->id,
+            )
+            ->assertJsonPath(
+                'data.0.name',
+                '自分の案件',
+            );
+    }
+
+    /**
+     * 他User所有Projectの詳細は取得できない。
+     */
+    public function test_cannot_get_other_users_project(): void
+    {
+        $otherUser =
+            User::factory()->create();
+
+        $otherCustomer =
+            $this->createCustomer([
+                'user_id' => $otherUser->id,
+                'name' => '他Userの顧客',
+                'email' => 'other-project-detail@example.com',
+            ]);
+
+        $project =
+            $this->createProject(
+                $otherCustomer,
+            );
+
+        $response = $this->getJson(
+            "/api/v1/projects/{$project->id}",
+        );
+
+        /**
+         * 403ではなく404として扱い、
+         * Projectの存在自体を他Userへ公開しない。
+         */
+        $response->assertNotFound();
+    }
+
+    /**
+     * 他User所有Projectは更新できない。
+     */
+    public function test_cannot_update_other_users_project(): void
+    {
+        $otherUser =
+            User::factory()->create();
+
+        $otherCustomer =
+            $this->createCustomer([
+                'user_id' => $otherUser->id,
+                'name' => '他Userの顧客',
+                'email' => 'other-project-update@example.com',
+            ]);
+
+        $project =
+            $this->createProject(
+                $otherCustomer,
+                [
+                    'name' => '他Userの案件',
+                ],
+            );
+
+        $response = $this->patchJson(
+            "/api/v1/projects/{$project->id}",
+            [
+                'name' => '不正な更新',
+            ],
+        );
+
+        $response->assertNotFound();
+
+        /**
+         * HTTP Responseだけでなく、
+         * Databaseも変更されていないことを確認する。
+         */
+        $this->assertDatabaseHas(
+            'projects',
+            [
+                'id' => $project->id,
+
+                'customer_id' => $otherCustomer->id,
+
+                'name' => '他Userの案件',
+            ],
+        );
+
+        $this->assertDatabaseMissing(
+            'projects',
+            [
+                'id' => $project->id,
+
+                'name' => '不正な更新',
+            ],
+        );
+    }
+
+    /**
+     * 他User所有Projectは削除できない。
+     */
+    public function test_cannot_delete_other_users_project(): void
+    {
+        $otherUser =
+            User::factory()->create();
+
+        $otherCustomer =
+            $this->createCustomer([
+                'user_id' => $otherUser->id,
+                'name' => '他Userの顧客',
+                'email' => 'other-project-delete@example.com',
+            ]);
+
+        $project =
+            $this->createProject(
+                $otherCustomer,
+            );
+
+        $response = $this->deleteJson(
+            "/api/v1/projects/{$project->id}",
+        );
+
+        $response->assertNotFound();
+
+        /**
+         * 削除が拒否されたため、
+         * ProjectがDatabaseに残っていることを確認する。
+         */
+        $this->assertDatabaseHas(
+            'projects',
+            [
+                'id' => $project->id,
+
+                'customer_id' => $otherCustomer->id,
+            ],
+        );
+    }
+
+    /**
+     * 他User所有Customerを指定して
+     * Projectを新規登録することはできない。
+     */
+    public function test_cannot_create_project_for_other_users_customer(): void
+    {
+        $otherUser =
+            User::factory()->create();
+
+        $otherCustomer =
+            $this->createCustomer([
+                'user_id' => $otherUser->id,
+                'name' => '他Userの顧客',
+                'email' => 'other-project-create@example.com',
+            ]);
+
+        $response = $this->postJson(
+            '/api/v1/projects',
+            [
+                'name' => '不正案件',
+
+                'customerId' => $otherCustomer->id,
+
+                'ownerName' => '山田 太郎',
+
+                'status' => 'draft',
+
+                'priority' => 'medium',
+
+                'amount' => 100000,
+
+                'startDate' => '2026-10-01',
+
+                'dueDate' => '2026-10-31',
+
+                'progress' => 0,
+            ],
+        );
+
+        /**
+         * Customer自体は存在するが、
+         * Login User所有ではないためValidation Errorになる。
+         */
+        $response
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors([
+                'customerId',
+            ]);
+
+        /**
+         * Projectが作成されていないことも確認する。
+         */
+        $this->assertDatabaseMissing(
+            'projects',
+            [
+                'name' => '不正案件',
+
+                'customer_id' => $otherCustomer->id,
+            ],
+        );
+    }
+
+    /**
+     * 既存ProjectのCustomerを、
+     * 他User所有Customerへ変更することはできない。
+     */
+    public function test_cannot_move_project_to_other_users_customer(): void
+    {
+        /**
+         * Login User所有CustomerとProject。
+         */
+        $ownCustomer =
+            $this->createCustomer([
+                'name' => '自分の顧客',
+                'email' => 'own-project-move@example.com',
+            ]);
+
+        $project =
+            $this->createProject(
+                $ownCustomer,
+            );
+
+        /**
+         * 別User所有Customer。
+         */
+        $otherUser =
+            User::factory()->create();
+
+        $otherCustomer =
+            $this->createCustomer([
+                'user_id' => $otherUser->id,
+                'name' => '他Userの顧客',
+                'email' => 'other-project-move@example.com',
+            ]);
+
+        $response = $this->patchJson(
+            "/api/v1/projects/{$project->id}",
+            [
+                'customerId' => $otherCustomer->id,
+            ],
+        );
+
+        /**
+         * customerIdはLogin User所有Customerだけ
+         * 指定可能なので422になる。
+         */
+        $response
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors([
+                'customerId',
+            ]);
+
+        /**
+         * Validationで拒否されたため、
+         * 元のCustomerとのRelationが維持されている。
+         */
+        $this->assertDatabaseHas(
+            'projects',
+            [
+                'id' => $project->id,
+
+                'customer_id' => $ownCustomer->id,
             ],
         );
     }

@@ -17,8 +17,45 @@ use Illuminate\Validation\Validator;
  */
 class UpdateProjectRequest extends FormRequest
 {
+    /**
+     * 更新対象Projectが
+     * Login User自身のProjectであることを確認する。
+     *
+     * FormRequestのValidationはControllerより先に実行されるため、
+     * Ownership確認もValidation前に行う。
+     *
+     * 他UserのProjectの場合は404を返し、
+     * Projectの存在情報を公開しない。
+     */
     public function authorize(): bool
     {
+        $project =
+            $this->route('project');
+
+        if (
+            ! $project instanceof Project
+        ) {
+            return false;
+        }
+
+        $user = $this->user();
+
+        if ($user === null) {
+            return false;
+        }
+
+        $ownedByUser = $project
+            ->customer()
+            ->where(
+                'user_id',
+                $user->id,
+            )
+            ->exists();
+
+        if (! $ownedByUser) {
+            abort(404);
+        }
+
         return true;
     }
 
@@ -40,11 +77,24 @@ class UpdateProjectRequest extends FormRequest
                 'max:255',
             ],
 
+            /**
+             * Customer変更時も、
+             * Login User自身が所有するCustomerだけを許可する。
+             */
             'customerId' => [
                 'sometimes',
                 'required',
                 'integer',
-                'exists:customers,id',
+
+                Rule::exists(
+                    'customers',
+                    'id',
+                )->where(
+                    fn ($query) => $query->where(
+                        'user_id',
+                        $this->user()->id,
+                    ),
+                ),
             ],
 
             'type' => [
@@ -64,6 +114,7 @@ class UpdateProjectRequest extends FormRequest
             'status' => [
                 'sometimes',
                 'required',
+
                 Rule::in([
                     'draft',
                     'proposal',
@@ -77,6 +128,7 @@ class UpdateProjectRequest extends FormRequest
             'priority' => [
                 'sometimes',
                 'required',
+
                 Rule::in([
                     'high',
                     'medium',

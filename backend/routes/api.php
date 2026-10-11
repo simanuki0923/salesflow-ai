@@ -9,10 +9,10 @@ use Illuminate\Support\Facades\Route;
 /**
  * SalesFlow AI REST API。
  *
- * Laravelによってroutes/api.phpへ
+ * routes/api.php にはLaravelによって
  * /api Prefixが自動付与される。
  *
- * さらにv1 Prefixを追加して、
+ * さらにv1 Prefixを追加し、
  *
  * /api/v1/...
  *
@@ -24,7 +24,7 @@ Route::prefix('v1')
         /**
          * API Health Check。
          *
-         * Applicationの稼働確認に使用するため、
+         * Applicationの稼働確認用なので
          * Authenticationは要求しない。
          */
         Route::get(
@@ -38,56 +38,39 @@ Route::prefix('v1')
         )->name('health');
 
         /**
-         * 現在Login中のUser情報を取得する。
+         * ここから下のAPIはLogin必須。
          *
-         * auth:sanctumによって、
-         * Sanctum SPA Authenticationの
-         * Session CookieからUserを認証する。
-         *
-         * 未認証の場合は401 Unauthorizedを返す。
+         * Sanctum SPA Authenticationによる
+         * Session Cookieを使用してUserを認証する。
          */
         Route::middleware('auth:sanctum')
-            ->get(
-                '/me',
-                function (Request $request) {
-                    return new UserResource(
-                        $request->user(),
-                    );
-                },
-            )
-            ->name('me');
+            ->group(function (): void {
+                /**
+                 * 現在Login中のUser情報。
+                 */
+                Route::get(
+                    '/me',
+                    function (Request $request) {
+                        return new UserResource(
+                            $request->user(),
+                        );
+                    },
+                )->name('me');
 
-        /**
-         * Customer REST API。
-         *
-         * 現段階ではまだauth:sanctumを付けない。
-         *
-         * Auth基盤の動作確認後、
-         * 次の実装段階でLogin User単位の
-         * Customer制御を追加する。
-         */
-        Route::apiResource(
-            'customers',
-            CustomerController::class,
-        );
+                /**
+                 * Customer REST API。
+                 */
+                Route::apiResource(
+                    'customers',
+                    CustomerController::class,
+                );
 
-        /**
-         * Project REST API。
-         *
-         * GET
-         * POST
-         * GET /{project}
-         * PUT/PATCH /{project}
-         * DELETE /{project}
-         *
-         * を生成する。
-         *
-         * Projectについても、
-         * Auth基盤確認後にUser単位の
-         * Authorizationを追加する。
-         */
-        Route::apiResource(
-            'projects',
-            ProjectController::class,
-        );
+                /**
+                 * Project REST API。
+                 */
+                Route::apiResource(
+                    'projects',
+                    ProjectController::class,
+                );
+            });
     });

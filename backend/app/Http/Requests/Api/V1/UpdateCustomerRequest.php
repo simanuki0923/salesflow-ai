@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Api\V1;
 
+use App\Models\Customer;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -16,8 +17,58 @@ use Illuminate\Validation\Rule;
  */
 class UpdateCustomerRequest extends FormRequest
 {
+    /**
+     * 更新対象Customerが
+     * Login User自身のCustomerであることを確認する。
+     *
+     * FormRequestのauthorize()は
+     * Controllerのupdate()より先に実行される。
+     *
+     * そのためOwnership確認もここで行い、
+     * 他UserのCustomerに対してValidation結果などを
+     * 返してしまわないようにする。
+     */
     public function authorize(): bool
     {
+        /**
+         * Route Model Bindingによって、
+         *
+         * /customers/{customer}
+         *
+         * の{customer}はCustomer Modelへ解決される。
+         */
+        $customer =
+            $this->route('customer');
+
+        if (
+            ! $customer instanceof Customer
+        ) {
+            return false;
+        }
+
+        $user = $this->user();
+
+        if ($user === null) {
+            return false;
+        }
+
+        /**
+         * Customerの所有Userと
+         * Login Userが一致するか確認する。
+         *
+         * 他UserのCustomerの場合は403ではなく404を返す。
+         *
+         * 404にすることで、
+         * そのCustomer IDが実在すること自体を
+         * 他Userへ公開しない。
+         */
+        if (
+            (int) $customer->user_id !==
+            (int) $user->id
+        ) {
+            abort(404);
+        }
+
         return true;
     }
 
