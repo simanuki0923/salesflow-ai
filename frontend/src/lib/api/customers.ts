@@ -83,15 +83,25 @@ export function mapCustomer(
 
 /**
  * Customer一覧取得。
+ *
+ * init:
+ * Next.js Server Componentから呼び出す場合に、
+ * Laravel Session Cookie等のAuthentication情報を
+ * apiRequest()へ渡すため使用する。
+ *
+ * Browser側から呼ぶ場合は、
+ * initを省略してそのまま利用できる。
  */
 export async function getCustomers(
   perPage = 100,
+  init: RequestInit = {},
 ): Promise<CustomerApiData[]> {
   const response =
     await apiRequest<
       ApiCollectionResponse<CustomerApiData>
     >(
       `/customers?perPage=${perPage}`,
+      init,
     );
 
   return response.data;
@@ -99,20 +109,48 @@ export async function getCustomers(
 
 /**
  * Customer詳細取得。
+ *
+ * init:
+ * Next.js Server ComponentからLaravelへ
+ * Session Cookieを転送するため使用する。
+ *
+ * これにより、
+ *
+ * Browser
+ * ↓
+ * Next.js Server Component
+ * ↓
+ * Laravel auth:sanctum
+ *
+ * の認証を維持したままCustomer詳細を取得できる。
  */
 export async function getCustomer(
   id: number,
+  init: RequestInit = {},
 ): Promise<CustomerApiData> {
   const response =
     await apiRequest<
       ApiResourceResponse<CustomerApiData>
-    >(`/customers/${id}`);
+    >(
+      `/customers/${id}`,
+      init,
+    );
 
   return response.data;
 }
 
 /**
  * Customer登録。
+ *
+ * Browser側のFormから実行する。
+ *
+ * apiRequest()側で、
+ *
+ * credentials: "include"
+ * X-XSRF-TOKEN
+ *
+ * を処理するため、
+ * ここでは認証処理を重複して書かない。
  */
 export async function createCustomer(
   formData: CustomerFormData,
@@ -139,6 +177,10 @@ export async function createCustomer(
  *
  * 現在の編集Formでは全項目を送るが、
  * Laravel側はPATCHによる部分更新にも対応している。
+ *
+ * Browser側からのPATCH Requestについても、
+ * apiRequest()がSession Cookieと
+ * XSRF Tokenの送信を担当する。
  */
 export async function updateCustomer(
   id: number,

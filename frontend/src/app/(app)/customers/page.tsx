@@ -8,6 +8,10 @@ import {
   mapCustomer,
 } from "@/lib/api/customers";
 
+import {
+  getServerAuthRequestInit,
+} from "@/lib/api/server-auth";
+
 /**
  * Customer一覧はPostgreSQLの最新データを表示したい。
  *
@@ -22,12 +26,14 @@ export const dynamic = "force-dynamic";
  *
  * データの流れ：
  *
- * PostgreSQL
+ * Browser
+ *     ↓ Laravel Session Cookie
+ * Next.js Server Component
  *     ↓
  * Laravel
  * GET /api/v1/customers
  *     ↓
- * getCustomers()
+ * PostgreSQL
  *     ↓
  * mapCustomer()
  *     ↓
@@ -35,13 +41,21 @@ export const dynamic = "force-dynamic";
  */
 export default async function CustomersPage() {
   /**
+   * BrowserからNext.jsへ送信された
+   * Laravel Session Cookieを、
+   * Laravel APIへのRequestにも引き継ぐ。
+   */
+  const authInit =
+    await getServerAuthRequestInit();
+
+  /**
    * Laravel APIからCustomer一覧を取得する。
-   *
-   * この時点ではLaravel Resource形式の
-   * CustomerApiData[] が返ってくる。
    */
   const apiCustomers =
-    await getCustomers(100);
+    await getCustomers(
+      100,
+      authInit,
+    );
 
   /**
    * Laravel API用の型から、
@@ -53,7 +67,6 @@ export default async function CustomersPage() {
 
   return (
     <div className="space-y-6">
-      {/* ページタイトルと新規登録ボタン */}
       <section className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-slate-900">
@@ -70,19 +83,10 @@ export default async function CustomersPage() {
           className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700"
         >
           <Plus size={18} />
-
           新規顧客登録
         </Link>
       </section>
 
-      {/*
-       * 検索・Status Filter・Paginationなどの
-       * UI操作はClient Component側へ任せる。
-       *
-       * データ取得はServer Component、
-       * UI操作はClient Component、
-       * という責務分離。
-       */}
       <CustomerListClient
         customers={customers}
       />

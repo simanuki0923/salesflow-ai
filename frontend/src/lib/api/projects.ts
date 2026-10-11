@@ -177,9 +177,18 @@ export function mapProject(
 
 /**
  * Project一覧取得。
+ *
+ * init:
+ * Next.js Server Componentから呼び出す場合に、
+ * Laravel Session Cookie等のAuthentication情報を
+ * apiRequest()へ渡すため使用する。
+ *
+ * Browser側から呼ぶ場合は、
+ * initを省略してそのまま利用できる。
  */
 export async function getProjects(
   query: ProjectQuery = {},
+  init: RequestInit = {},
 ): Promise<ProjectApiData[]> {
   const queryString =
     buildProjectQuery(query);
@@ -189,6 +198,7 @@ export async function getProjects(
       ApiCollectionResponse<ProjectApiData>
     >(
       `/projects?${queryString}`,
+      init,
     );
 
   return response.data;
@@ -196,15 +206,31 @@ export async function getProjects(
 
 /**
  * Project詳細取得。
+ *
+ * init:
+ * Next.js Server ComponentからLaravelへ
+ * Session Cookieを転送するため使用する。
+ *
+ * これにより、
+ *
+ * Browser
+ * ↓
+ * Next.js Server Component
+ * ↓
+ * Laravel auth:sanctum
+ *
+ * の認証を維持したままProject詳細を取得できる。
  */
 export async function getProject(
   id: number,
+  init: RequestInit = {},
 ): Promise<ProjectApiData> {
   const response =
     await apiRequest<
       ApiResourceResponse<ProjectApiData>
     >(
       `/projects/${id}`,
+      init,
     );
 
   return response.data;
@@ -315,6 +341,10 @@ function createProjectPayload(
  * Project新規登録。
  *
  * POST /api/v1/projects
+ *
+ * Browser側のFormから実行するため、
+ * Session CookieとXSRF Tokenの送信は
+ * apiRequest()側で共通処理する。
  */
 export async function createProject(
   formData: ProjectFormData,
@@ -342,6 +372,10 @@ export async function createProject(
  * Project更新。
  *
  * PATCH /api/v1/projects/{id}
+ *
+ * Browser側からのPATCH Requestについても、
+ * apiRequest()がSession Cookieと
+ * XSRF Tokenの送信を担当する。
  */
 export async function updateProject(
   id: number,

@@ -15,20 +15,18 @@ import {
   getProject,
 } from "@/lib/api/projects";
 
+import {
+  getServerAuthRequestInit,
+} from "@/lib/api/server-auth";
+
 import type {
   ProjectCustomerOption,
   ProjectFormData,
 } from "@/types/project";
 
-/**
- * 編集画面では、
- * PostgreSQLの最新Project / Customerを取得する。
- */
-export const dynamic = "force-dynamic";
+export const dynamic =
+  "force-dynamic";
 
-/**
- * Dynamic Route Props。
- */
 type ProjectEditPageProps = {
   params: Promise<{
     id: string;
@@ -37,15 +35,6 @@ type ProjectEditPageProps = {
 
 /**
  * Project編集ページ。
- *
- * Project：
- * GET /api/v1/projects/{id}
- *
- * Customer一覧：
- * GET /api/v1/customers
- *
- * を取得し、
- * ProjectFormへ編集初期値として渡す。
  */
 export default async function ProjectEditPage({
   params,
@@ -55,44 +44,53 @@ export default async function ProjectEditPage({
   const projectId =
     Number(id);
 
-  /**
-   * 不正なIDはAPIへ送らず404にする。
-   */
   if (
-    !Number.isInteger(projectId) ||
+    !Number.isInteger(
+      projectId,
+    ) ||
     projectId <= 0
   ) {
     notFound();
   }
 
   /**
-   * APIから取得したデータを、
-   * try/catch外でも利用するため
-   * 先に変数だけ宣言する。
+   * Laravel Session Cookieを、
+   *
+   * Project API
+   * Customer API
+   *
+   * の両方へ渡す。
+   */
+  const authInit =
+    await getServerAuthRequestInit();
+
+  /**
+   * API取得結果をtry/catch外でも使うため、
+   * 先に変数を宣言する。
    */
   let project;
   let customers;
 
   try {
     /**
-     * ProjectとCustomer一覧には
-     * データ依存関係がない。
-     *
-     * そのためPromise.all()で
-     * 同時に取得して待ち時間を短縮する。
+     * ProjectとCustomer一覧は
+     * 相互依存しないため並列取得する。
      */
     [
       project,
       customers,
     ] = await Promise.all([
-      getProject(projectId),
+      getProject(
+        projectId,
+        authInit,
+      ),
 
-      getCustomers(100),
+      getCustomers(
+        100,
+        authInit,
+      ),
     ]);
   } catch (error) {
-    /**
-     * Projectが存在しない場合。
-     */
     if (
       error instanceof ApiError &&
       error.status === 404
@@ -100,25 +98,13 @@ export default async function ProjectEditPage({
       notFound();
     }
 
-    /**
-     * Laravel停止など、
-     * その他のErrorは上位へ渡す。
-     */
     throw error;
   }
 
   /**
-   * ここから下はtry/catch外。
-   *
-   * React JSXをtry/catch内へ置かないことで、
-   * react-hooks/error-boundariesの
-   * ESLint Errorを回避する。
+   * JSXはtry/catch外で生成する。
    */
 
-  /**
-   * Customer API Dataを、
-   * ProjectFormのSelect用データへ変換する。
-   */
   const customerOptions:
     ProjectCustomerOption[] =
     customers.map(
@@ -131,22 +117,6 @@ export default async function ProjectEditPage({
       }),
     );
 
-  /**
-   * Laravel APIとHTML Formでは
-   * 一部の値の型が違う。
-   *
-   * API：
-   * customerId number
-   * amount number
-   * progress number
-   *
-   * Form：
-   * customerId string
-   * amount string
-   * progress string
-   *
-   * そのためFormへ渡す段階でstring化する。
-   */
   const initialData:
     ProjectFormData = {
     name:
@@ -174,13 +144,6 @@ export default async function ProjectEditPage({
         project.amount,
       ),
 
-    /**
-     * Laravel ProjectResourceは
-     * YYYY-MM-DD形式で返す。
-     *
-     * そのためinput type="date"へ
-     * そのまま渡せる。
-     */
     startDate:
       project.startDate,
 
@@ -199,9 +162,6 @@ export default async function ProjectEditPage({
       project.notes ?? "",
   };
 
-  /**
-   * JSXはtry/catchの外でReturnする。
-   */
   return (
     <div className="space-y-6">
       <section>

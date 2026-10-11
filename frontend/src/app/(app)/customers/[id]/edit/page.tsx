@@ -11,6 +11,10 @@ import {
   getCustomer,
 } from "@/lib/api/customers";
 
+import {
+  getServerAuthRequestInit,
+} from "@/lib/api/server-auth";
+
 import type {
   CustomerFormData,
 } from "@/types/customer";
@@ -47,12 +51,20 @@ export default async function CustomerEditPage({
     notFound();
   }
 
+  /**
+   * BrowserからNext.jsへ届いた
+   * Laravel Session Cookieを取得する。
+   */
+  const authInit =
+    await getServerAuthRequestInit();
+
   let customer;
 
   try {
     customer =
       await getCustomer(
         customerId,
+        authInit,
       );
   } catch (error) {
     if (
@@ -65,10 +77,6 @@ export default async function CustomerEditPage({
     throw error;
   }
 
-  /**
-   * APIではnullableな項目を、
-   * HTML inputで扱いやすい空文字へ変換する。
-   */
   const initialData:
     CustomerFormData = {
     name:
