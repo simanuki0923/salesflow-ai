@@ -9,6 +9,7 @@ use App\Http\Requests\Api\V1\UpdateCustomerRequest;
 use App\Http\Resources\Api\V1\CustomerResource;
 use App\Models\Customer;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response;
 
@@ -27,6 +28,9 @@ use Illuminate\Http\Response;
  *
  * ValidationはFormRequest、
  * JSON変換はCustomerResourceへ分離している。
+ *
+ * また、すべてのCustomer操作は
+ * Login User自身が所有するCustomerだけを対象とする。
  */
 class CustomerController extends Controller
 {
@@ -41,16 +45,25 @@ class CustomerController extends Controller
         $validated = $request->validated();
 
         /**
-         * projectCountも取得する。
+         * Login User自身が所有するCustomerだけを
+         * Query対象にする。
+         *
+         * Customer::query()を直接使用すると、
+         * 他UserのCustomerまで取得できてしまうため、
+         * User -> customers() Relationを起点にする。
+         *
+         * projectCountも同時に取得する。
          *
          * projects本体を読み込むのではなく、
          * COUNTだけ取得するため効率がよい。
          */
-        $query = Customer::query()
+        $query = $request
+            ->user()
+            ->customers()
             ->withCount('projects');
 
         /**
-         * 案件名・担当者・メール検索。
+         * 顧客名・担当者・メール検索。
          *
          * LOWER + LIKEにすることで、
          * PostgreSQLだけでなくTest用SQLiteでも
@@ -139,11 +152,24 @@ class CustomerController extends Controller
         StoreCustomerRequest $request,
     ): JsonResponse {
         /**
-         * Validation済みデータを
-         * snake_caseへ変換してDB登録する。
+         * Validation済みのForm Dataを
+         * Database用のsnake_caseへ変換する。
          */
+        $attributes = $request->modelAttributes();
+
+        /**
+         * Customerの所有者はFrontendから受け取らない。
+         *
+         * auth:sanctumで認証されたLogin Userを
+         * Laravel側でuser_idへ設定する。
+         *
+         * これによりFrontendから別Userのuser_idを送信して
+         * Customerを作成することを防止する。
+         */
+        $attributes['user_id'] = $request->user()->id;
+
         $customer = Customer::create(
-            $request->modelAttributes(),
+            $attributes,
         );
 
         /**
@@ -177,11 +203,21 @@ class CustomerController extends Controller
      * URLのcustomer IDからCustomer Modelが
      * 自動取得される。
      *
-     * 存在しなければLaravelが404を返す。
+     * Customerが存在しない場合、
+     * Laravelが404を返す。
+     *
+     * Customerが存在していても
+     * Login User所有でなければ404を返す。
      */
     public function show(
+        Request $request,
         Customer $customer,
     ): CustomerResource {
+        $this->ensureCustomerOwnedByUser(
+            $request,
+            $customer,
+        );
+
         $customer->loadCount(
             'projects',
         );
@@ -202,8 +238,20 @@ class CustomerController extends Controller
         Customer $customer,
     ): CustomerResource {
         /**
+         * Login User自身のCustomerであることを
+         * 更新前に確認する。
+         */
+        $this->ensureCustomerOwnedByUser(
+            $request,
+            $customer,
+        );
+
+        /**
          * PATCHの場合はRequestへ送られた項目だけが
          * modelAttributes()から返る。
+         *
+         * user_idはUpdateCustomerRequestから受け取らないため、
+         * Customerの所有者が更新されることはない。
          */
         $customer->update(
             $request->modelAttributes(),
@@ -229,8 +277,17 @@ class CustomerController extends Controller
      * DELETE /api/v1/customers/{customer}
      */
     public function destroy(
+        Request $request,
         Customer $customer,
     ): JsonResponse|Response {
+        /**
+         * Login User自身のCustomerだけ削除可能にする。
+         */
+        $this->ensureCustomerOwnedByUser(
+            $request,
+            $customer,
+        );
+
         /**
          * Projectが存在するCustomerを削除すると、
          * Projectが紐付くCustomerを失ってしまう。
@@ -259,5 +316,30 @@ class CustomerController extends Controller
          * HTTP 204 No Content。
          */
         return response()->noContent();
+    }
+
+    /**
+     * 指定されたCustomerが
+     * Login User自身の所有データか確認する。
+     *
+     * 他UserのCustomerだった場合は403ではなく404を返す。
+     *
+     * 403にすると、
+     *
+     * 「そのIDのCustomerは存在する」
+     *
+     * という情報を別Userへ伝えてしまうため、
+     * SalesFlow AIでは存在しない場合と同じ404として扱う。
+     */
+    private function ensureCustomerOwnedByUser(
+        Request $request,
+        Customer $customer,
+    ): void {
+        if (
+            (int) $customer->user_id !==
+            (int) $request->user()->id
+        ) {
+            abort(404);
+        }
     }
 }

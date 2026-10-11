@@ -9,6 +9,7 @@ use App\Http\Requests\Api\V1\UpdateProjectRequest;
 use App\Http\Resources\Api\V1\ProjectResource;
 use App\Models\Project;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response;
 
@@ -37,6 +38,16 @@ use Illuminate\Http\Response;
  *   ProjectResource
  *
  * へ責務を分離している。
+ *
+ * Projectには直接user_idを持たせず、
+ *
+ * Project
+ * ↓
+ * Customer
+ * ↓
+ * User
+ *
+ * の関係から所有Userを判定する。
  */
 class ProjectController extends Controller
 {
@@ -52,13 +63,26 @@ class ProjectController extends Controller
             $request->validated();
 
         /**
+         * Login Userが所有するCustomerに紐付く
+         * Projectだけを取得対象にする。
+         *
+         * Project::query()だけでは
+         * 他UserのProjectまで取得できてしまうため、
+         * Customer.user_idでScopeする。
+         *
          * Project一覧では顧客名も使用するため、
          * customer RelationをEager Loadする。
-         *
-         * id/nameだけに絞って不要なColumnを
-         * 取得しないようにする。
          */
         $query = Project::query()
+            ->whereHas(
+                'customer',
+                function ($customerQuery) use ($request): void {
+                    $customerQuery->where(
+                        'user_id',
+                        $request->user()->id,
+                    );
+                },
+            )
             ->with([
                 'customer:id,name',
             ]);
@@ -153,6 +177,10 @@ class ProjectController extends Controller
          *
          * 顧客詳細画面から、
          * その顧客の案件だけ取得する場合にも利用可能。
+         *
+         * Query全体が既にLogin UserでScopeされているため、
+         * 他UserのcustomerIdを指定しても
+         * Projectが返ることはない。
          */
         if (
             isset(
@@ -202,6 +230,9 @@ class ProjectController extends Controller
         StoreProjectRequest $request,
     ): JsonResponse {
         /**
+         * customerIdがLogin User所有Customerであることは
+         * StoreProjectRequestでValidationされる。
+         *
          * Validation済みデータを
          * Project Modelへ登録する。
          */
@@ -238,11 +269,18 @@ class ProjectController extends Controller
      * Route Model Bindingにより
      * IDからProject Modelが自動取得される。
      *
-     * 存在しないIDならLaravelが404を返す。
+     * 存在しないProject、
+     * または他User所有Projectの場合は404。
      */
     public function show(
+        Request $request,
         Project $project,
     ): ProjectResource {
+        $this->ensureProjectOwnedByUser(
+            $request,
+            $project,
+        );
+
         $project->load([
             'customer:id,name',
         ]);
@@ -262,6 +300,19 @@ class ProjectController extends Controller
         UpdateProjectRequest $request,
         Project $project,
     ): ProjectResource {
+        /**
+         * 更新対象Projectが
+         * Login User所有であることを確認する。
+         *
+         * UpdateProjectRequest側でも
+         * Validation前にOwnershipを確認しているが、
+         * Controller側でも防御的に確認する。
+         */
+        $this->ensureProjectOwnedByUser(
+            $request,
+            $project,
+        );
+
         /**
          * PATCHの場合はRequestに存在する項目だけ
          * modelAttributes()へ含まれる。
@@ -294,8 +345,17 @@ class ProjectController extends Controller
      * DELETE /api/v1/projects/{project}
      */
     public function destroy(
+        Request $request,
         Project $project,
     ): Response {
+        /**
+         * Login User所有Projectだけ削除可能にする。
+         */
+        $this->ensureProjectOwnedByUser(
+            $request,
+            $project,
+        );
+
         $project->delete();
 
         /**
@@ -304,5 +364,31 @@ class ProjectController extends Controller
          * HTTP 204 No Content。
          */
         return response()->noContent();
+    }
+
+    /**
+     * ProjectがLogin User所有か確認する。
+     *
+     * Project自身にはuser_idがないため、
+     * Customer Relationを通して所有者を確認する。
+     *
+     * 他UserのProjectの場合は403ではなく404を返し、
+     * Projectの存在自体を他Userへ伝えない。
+     */
+    private function ensureProjectOwnedByUser(
+        Request $request,
+        Project $project,
+    ): void {
+        $ownedByUser = $project
+            ->customer()
+            ->where(
+                'user_id',
+                $request->user()->id,
+            )
+            ->exists();
+
+        if (! $ownedByUser) {
+            abort(404);
+        }
     }
 }

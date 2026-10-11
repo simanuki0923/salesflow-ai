@@ -40,12 +40,26 @@ class StoreProjectRequest extends FormRequest
             /**
              * 案件を所有するCustomer。
              *
-             * customersテーブルに実在するIDだけを許可する。
+             * 単純にCustomerが存在するだけではなく、
+             * Login User自身が所有するCustomerだけを許可する。
+             *
+             * これにより、
+             * 他UserのCustomer IDを指定して
+             * Projectを作成することを防止する。
              */
             'customerId' => [
                 'required',
                 'integer',
-                'exists:customers,id',
+
+                Rule::exists(
+                    'customers',
+                    'id',
+                )->where(
+                    fn ($query) => $query->where(
+                        'user_id',
+                        $this->user()->id,
+                    ),
+                ),
             ],
 
             /**
@@ -71,6 +85,7 @@ class StoreProjectRequest extends FormRequest
              */
             'status' => [
                 'required',
+
                 Rule::in([
                     'draft',
                     'proposal',
@@ -86,6 +101,7 @@ class StoreProjectRequest extends FormRequest
              */
             'priority' => [
                 'required',
+
                 Rule::in([
                     'high',
                     'medium',

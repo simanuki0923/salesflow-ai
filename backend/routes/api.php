@@ -2,15 +2,17 @@
 
 use App\Http\Controllers\Api\V1\CustomerController;
 use App\Http\Controllers\Api\V1\ProjectController;
+use App\Http\Resources\Api\V1\UserResource;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 /**
  * SalesFlow AI REST API。
  *
- * Laravelによってroutes/api.phpへ
+ * routes/api.php にはLaravelによって
  * /api Prefixが自動付与される。
  *
- * さらにv1 Prefixを追加して、
+ * さらにv1 Prefixを追加し、
  *
  * /api/v1/...
  *
@@ -21,6 +23,9 @@ Route::prefix('v1')
     ->group(function (): void {
         /**
          * API Health Check。
+         *
+         * Applicationの稼働確認用なので
+         * Authenticationは要求しない。
          */
         Route::get(
             '/health',
@@ -33,26 +38,39 @@ Route::prefix('v1')
         )->name('health');
 
         /**
-         * Customer REST API。
+         * ここから下のAPIはLogin必須。
+         *
+         * Sanctum SPA Authenticationによる
+         * Session Cookieを使用してUserを認証する。
          */
-        Route::apiResource(
-            'customers',
-            CustomerController::class,
-        );
+        Route::middleware('auth:sanctum')
+            ->group(function (): void {
+                /**
+                 * 現在Login中のUser情報。
+                 */
+                Route::get(
+                    '/me',
+                    function (Request $request) {
+                        return new UserResource(
+                            $request->user(),
+                        );
+                    },
+                )->name('me');
 
-        /**
-         * Project REST API。
-         *
-         * GET
-         * POST
-         * GET /{project}
-         * PUT/PATCH /{project}
-         * DELETE /{project}
-         *
-         * を生成する。
-         */
-        Route::apiResource(
-            'projects',
-            ProjectController::class,
-        );
+                /**
+                 * Customer REST API。
+                 */
+                Route::apiResource(
+                    'customers',
+                    CustomerController::class,
+                );
+
+                /**
+                 * Project REST API。
+                 */
+                Route::apiResource(
+                    'projects',
+                    ProjectController::class,
+                );
+            });
     });

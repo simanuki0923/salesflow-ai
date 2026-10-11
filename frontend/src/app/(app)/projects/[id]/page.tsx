@@ -21,18 +21,13 @@ import {
   mapProjectDetail,
 } from "@/lib/api/projects";
 
-/**
- * Project詳細ではPostgreSQLの最新状態を表示する。
- *
- * Static Generationで固定せず、
- * Request時にLaravel APIから取得する。
- */
-export const dynamic = "force-dynamic";
+import {
+  getServerAuthRequestInit,
+} from "@/lib/api/server-auth";
 
-/**
- * Next.js 16 App Routerでは、
- * Dynamic RouteのparamsをPromiseとして受け取る。
- */
+export const dynamic =
+  "force-dynamic";
+
 type ProjectDetailPageProps = {
   params: Promise<{
     id: string;
@@ -41,57 +36,34 @@ type ProjectDetailPageProps = {
 
 /**
  * Project詳細ページ。
- *
- * データの流れ：
- *
- * URL /projects/{id}
- *      ↓
- * getProject()
- *      ↓
- * Laravel
- * GET /api/v1/projects/{id}
- *      ↓
- * PostgreSQL
- *      ↓
- * mapProjectDetail()
- *      ↓
- * 各表示Component
  */
 export default async function ProjectDetailPage({
   params,
 }: ProjectDetailPageProps) {
-  /**
-   * URL Parameterを取得する。
-   *
-   * 例：
-   *
-   * /projects/10
-   *
-   * ↓
-   *
-   * id = "10"
-   */
   const { id } = await params;
 
   const projectId =
     Number(id);
 
-  /**
-   * 数字として成立しないIDは、
-   * Laravel APIへ送らずNext.js側で404にする。
-   */
   if (
-    !Number.isInteger(projectId) ||
+    !Number.isInteger(
+      projectId,
+    ) ||
     projectId <= 0
   ) {
     notFound();
   }
 
   /**
-   * try/catchでは、
-   * Laravel API通信だけを扱う。
+   * Laravel Session Cookieを取得する。
+   */
+  const authInit =
+    await getServerAuthRequestInit();
+
+  /**
+   * API Requestだけをtry/catchする。
    *
-   * JSXをtry/catchへ含めないことが重要。
+   * JSXはtry/catchに入れない。
    */
   let apiProject;
 
@@ -99,15 +71,12 @@ export default async function ProjectDetailPage({
     apiProject =
       await getProject(
         projectId,
+        authInit,
       );
   } catch (error) {
     /**
-     * Laravel Route Model Bindingで
-     * Projectが存在しない場合は404になる。
-     *
-     * Laravel 404
-     * ↓
-     * Next.js notFound()
+     * Projectが存在しない、
+     * または他User所有Projectなら404。
      */
     if (
       error instanceof ApiError &&
@@ -116,62 +85,29 @@ export default async function ProjectDetailPage({
       notFound();
     }
 
-    /**
-     * Laravel停止、
-     * Network Error、
-     * 500 Errorなどは
-     * Next.js側のError処理へ渡す。
-     */
     throw error;
   }
 
-  /**
-   * API取得成功後に、
-   * Project詳細画面用の型へ変換する。
-   *
-   * 現在まだAPI未実装の、
-   *
-   * tasks
-   * activities
-   * milestones
-   *
-   * はmapProjectDetail()内で空配列になる。
-   */
   const project =
     mapProjectDetail(
       apiProject,
     );
 
-  /**
-   * JSXはtry/catchの外で生成する。
-   *
-   * React ComponentのRendering Errorは、
-   * API Requestのtry/catchで捕捉するものではない。
-   */
   return (
     <div className="space-y-6">
-      {/* 案件名・顧客名・編集ボタン等 */}
       <ProjectDetailHeader
         project={project}
       />
 
-      {/* 金額・進捗・期間・案件概要 */}
       <ProjectOverview
         project={project}
       />
 
       <div className="grid gap-6 xl:grid-cols-2">
-        {/*
-         * Task APIは今後実装する。
-         * 現段階では空配列を受け取る。
-         */}
         <ProjectTasks
           tasks={project.tasks}
         />
 
-        {/*
-         * Activity APIも今後実装する。
-         */}
         <ProjectActivity
           activities={
             project.activities
@@ -179,7 +115,6 @@ export default async function ProjectDetailPage({
         />
       </div>
 
-      {/* メモが登録されている場合だけ表示する */}
       {project.notes && (
         <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <h2 className="text-lg font-bold text-slate-900">

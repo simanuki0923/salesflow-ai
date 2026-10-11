@@ -5,6 +5,10 @@ import {
   getCustomers,
 } from "@/lib/api/customers";
 
+import {
+  getServerAuthRequestInit,
+} from "@/lib/api/server-auth";
+
 import type {
   ProjectCustomerOption,
 } from "@/types/project";
@@ -13,37 +17,41 @@ import type {
  * Customer一覧もDBから取得するため、
  * Dynamic Renderingとする。
  */
-export const dynamic = "force-dynamic";
+export const dynamic =
+  "force-dynamic";
 
 /**
  * Project新規登録ページ。
  *
  * Projectに紐づけるCustomerも
- * MockではなくLaravel Customer APIから取得する。
+ * Laravel Customer APIから取得する。
  */
 export default async function ProjectCreatePage() {
   /**
-   * GET /api/v1/customers
+   * Laravel Session Cookieを
+   * Customer APIへ渡す。
+   *
+   * Laravel側でLogin User所有Customerだけが
+   * 返される。
    */
-  const customers =
-    await getCustomers(100);
+  const authInit =
+    await getServerAuthRequestInit();
 
-  /**
-   * ProjectFormのSelectには
-   *
-   * id
-   * name
-   *
-   * だけあればよいため、
-   * CustomerApiData全体ではなく
-   * ProjectCustomerOptionへ変換する。
-   */
+  const customers =
+    await getCustomers(
+      100,
+      authInit,
+    );
+
   const customerOptions:
     ProjectCustomerOption[] =
     customers.map(
       (customer) => ({
-        id: customer.id,
-        name: customer.name,
+        id:
+          customer.id,
+
+        name:
+          customer.name,
       }),
     );
 
