@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 use App\Models\Customer;
+use App\Models\User;
 use Illuminate\Database\Seeder;
 
 /**
@@ -11,8 +12,8 @@ use Illuminate\Database\Seeder;
  * Next.jsで使用しているMock Dataに近いCustomerを
  * PostgreSQLへ登録する。
  *
- * これにより後ほどAPI接続するときも、
- * UI側の見た目を大きく変えずに確認できる。
+ * Sanctum認証導入後は、
+ * 開発確認用UserへCustomerを所有させる。
  */
 class CustomerSeeder extends Seeder
 {
@@ -22,6 +23,19 @@ class CustomerSeeder extends Seeder
     public function run(): void
     {
         /**
+         * DatabaseSeederで作成済みの
+         * 開発確認用Userを取得する。
+         *
+         * Customer.user_idへこのUser IDを設定することで、
+         * auth:sanctumでLoginしたUserから
+         * Customerを取得できるようにする。
+         */
+        $user = User::where(
+            'email',
+            'test@example.com',
+        )->firstOrFail();
+
+        /**
          * 開発確認用Customer。
          *
          * 実在企業・個人情報ではなく
@@ -29,7 +43,7 @@ class CustomerSeeder extends Seeder
          */
         $customers = [
             [
-                'user_id' => null,
+                'user_id' => $user->id,
 
                 'name' => '株式会社ABC',
 
@@ -59,7 +73,7 @@ class CustomerSeeder extends Seeder
             ],
 
             [
-                'user_id' => null,
+                'user_id' => $user->id,
 
                 'name' => '株式会社サンプル',
 
@@ -89,7 +103,7 @@ class CustomerSeeder extends Seeder
             ],
 
             [
-                'user_id' => null,
+                'user_id' => $user->id,
 
                 'name' => '合同会社テスト',
 
@@ -119,7 +133,7 @@ class CustomerSeeder extends Seeder
             ],
 
             [
-                'user_id' => null,
+                'user_id' => $user->id,
 
                 'name' => 'デザイン株式会社',
 
@@ -149,7 +163,7 @@ class CustomerSeeder extends Seeder
             ],
 
             [
-                'user_id' => null,
+                'user_id' => $user->id,
 
                 'name' => 'システム開発株式会社',
 
@@ -180,17 +194,15 @@ class CustomerSeeder extends Seeder
         ];
 
         /**
-         * updateOrCreate()を使う理由。
+         * emailを開発用データの識別子として
+         * updateOrCreate()する。
          *
-         * Seederを複数回実行しても、
-         * 同じメールアドレスのCustomerが
-         * 無限に増えないようにする。
+         * 既存Customerが存在する場合も、
+         * user_idを含めて最新Seeder内容へUPDATEされる。
          *
-         * emailが一致：
-         *   UPDATE
-         *
-         * emailが存在しない：
-         *   INSERT
+         * そのため今回すでに存在している
+         * user_id = null のCustomerも、
+         * test@example.com所有へ更新される。
          */
         foreach ($customers as $customer) {
             Customer::updateOrCreate(
