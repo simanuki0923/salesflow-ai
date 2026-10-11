@@ -2,6 +2,8 @@
 
 use App\Http\Controllers\Api\V1\CustomerController;
 use App\Http\Controllers\Api\V1\ProjectController;
+use App\Http\Resources\Api\V1\UserResource;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 /**
@@ -21,6 +23,9 @@ Route::prefix('v1')
     ->group(function (): void {
         /**
          * API Health Check。
+         *
+         * Applicationの稼働確認に使用するため、
+         * Authenticationは要求しない。
          */
         Route::get(
             '/health',
@@ -33,7 +38,33 @@ Route::prefix('v1')
         )->name('health');
 
         /**
+         * 現在Login中のUser情報を取得する。
+         *
+         * auth:sanctumによって、
+         * Sanctum SPA Authenticationの
+         * Session CookieからUserを認証する。
+         *
+         * 未認証の場合は401 Unauthorizedを返す。
+         */
+        Route::middleware('auth:sanctum')
+            ->get(
+                '/me',
+                function (Request $request) {
+                    return new UserResource(
+                        $request->user(),
+                    );
+                },
+            )
+            ->name('me');
+
+        /**
          * Customer REST API。
+         *
+         * 現段階ではまだauth:sanctumを付けない。
+         *
+         * Auth基盤の動作確認後、
+         * 次の実装段階でLogin User単位の
+         * Customer制御を追加する。
          */
         Route::apiResource(
             'customers',
@@ -50,6 +81,10 @@ Route::prefix('v1')
          * DELETE /{project}
          *
          * を生成する。
+         *
+         * Projectについても、
+         * Auth基盤確認後にUser単位の
+         * Authorizationを追加する。
          */
         Route::apiResource(
             'projects',
