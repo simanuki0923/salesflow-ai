@@ -1,318 +1,635 @@
+import Link from "next/link";
+
 import {
+  Banknote,
   BriefcaseBusiness,
-  CalendarDays,
-  ListTodo,
+  Clock3,
   Users,
 } from "lucide-react";
 
-import type { LucideIcon } from "lucide-react";
+import type {
+  LucideIcon,
+} from "lucide-react";
 
-/* =========================================================
- * TypeScript 型定義
- * ========================================================= */
+import {
+  getDashboard,
+} from "@/lib/api/dashboard";
+
+import type {
+  DashboardProjectStatusCounts,
+} from "@/lib/api/dashboard";
+
+import {
+  getServerAuthRequestInit,
+} from "@/lib/api/server-auth";
+
+import type {
+  ProjectPriority,
+  ProjectStatus,
+} from "@/types/project";
 
 /**
- * Dashboard上部に表示する集計カード1件分の型。
- *
- * 例：
- * ・顧客数
- * ・案件数
- * ・未完了タスク
- * ・今月の商談
- *
- * LucideIconを使用することで、
- * lucide-reactのアイコンコンポーネントを
- * iconプロパティとして保持できる。
+ * DashboardはPostgreSQLの最新情報を表示するため、
+ * RequestごとにServer Componentを実行する。
+ */
+export const dynamic =
+  "force-dynamic";
+
+/**
+ * Dashboard上部に表示する
+ * 集計カード1件分の型。
  */
 type SummaryCard = {
-  // カードタイトル
+  /**
+   * カードタイトル。
+   */
   title: string;
 
-  // メインとなる数値
+  /**
+   * カードへ表示する主な値。
+   */
   value: string;
 
-  // 「件」などの単位
+  /**
+   * 「件」などの単位。
+   */
   unit: string;
 
-  // 前月比などの変化率
-  change: string;
+  /**
+   * カード下部へ表示する補足情報。
+   */
+  description: string;
 
-  // lucide-reactのアイコン
+  /**
+   * lucide-reactのIcon Component。
+   */
   icon: LucideIcon;
 
-  // アイコン部分へ適用するTailwind CSS
+  /**
+   * Icon背景・文字色。
+   */
   iconClass: string;
 
-  // 増減率部分へ適用するTailwind CSS
-  changeClass: string;
+  /**
+   * 補足表示の背景・文字色。
+   */
+  descriptionClass: string;
 };
 
 /**
- * タスクに設定できる優先度。
- *
- * string型にしてしまうと、
- * "AAA"など想定外の文字も登録できてしまう。
- *
- * Union型を使うことで
- * 「高」「中」「低」の3つだけに制限する。
+ * Dashboardの案件ステータス表示用。
  */
-type TaskPriority = "高" | "中" | "低";
+type ProjectStatusItem = {
+  /**
+   * Laravel Dashboard APIの
+   * projectStatusCountsと対応するKey。
+   */
+  key:
+    keyof DashboardProjectStatusCounts;
 
-/**
- * Dashboardの「今後のタスク」に表示する
- * タスク1件分の型。
- */
-type DashboardTask = {
-  id: number;
-  title: string;
-  dueDate: string;
-  priority: TaskPriority;
-};
-
-/**
- * Dashboardの「最近の商談」に表示する
- * 商談1件分の型。
- */
-type RecentMeeting = {
-  customer: string;
-  project: string;
-  date: string;
-};
-
-/**
- * Dashboardの「お知らせ」に表示する
- * お知らせ1件分の型。
- */
-type Notification = {
-  id: number;
-  date: string;
-  message: string;
-};
-
-/**
- * 案件ステータス1件分の型。
- *
- * countには該当ステータスの案件数を保持する。
- * colorClassは円グラフ横の凡例に使用する。
- */
-type ProjectStatus = {
+  /**
+   * 日本語表示名。
+   */
   label: string;
+
+  /**
+   * 該当ステータスの案件数。
+   */
   count: number;
+
+  /**
+   * 凡例で使用するTailwind CSS。
+   */
   colorClass: string;
+
+  /**
+   * ドーナツグラフで使用する色。
+   */
+  chartColor: string;
 };
 
+/**
+ * 数値を日本円表示へ変換する。
+ *
+ * 例：
+ *
+ * 550000
+ *
+ * ↓
+ *
+ * ￥550,000
+ */
+function formatCurrency(
+  amount: number,
+): string {
+  return new Intl.NumberFormat(
+    "ja-JP",
+    {
+      style: "currency",
+      currency: "JPY",
+      maximumFractionDigits: 0,
+    },
+  ).format(amount);
+}
 
-/* =========================================================
- * Mockデータ
- * =========================================================
+/**
+ * YYYY-MM-DD形式の日付を
+ * Dashboard表示用へ変換する。
  *
- * 現段階ではLaravel APIへ接続していないため、
- * UI確認用として固定データを使用する。
+ * Date Objectへ変換するとTime Zoneの影響を
+ * 受ける可能性があるため、
+ * 日付だけの場合は文字列として整形する。
  *
- * Laravel API完成後は、
+ * 例：
  *
+ * 2026-10-15
+ *
+ * ↓
+ *
+ * 2026/10/15
+ */
+function formatDate(
+  date: string | null,
+): string {
+  if (date === null) {
+    return "未設定";
+  }
+
+  return date.replaceAll(
+    "-",
+    "/",
+  );
+}
+
+/**
+ * Laravelから取得したISO 8601 DateTimeを
+ * 日本時間の日付表示へ変換する。
+ */
+function formatUpdatedDate(
+  date: string,
+): string {
+  return new Intl.DateTimeFormat(
+    "ja-JP",
+    {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      timeZone: "Asia/Tokyo",
+    },
+  ).format(
+    new Date(date),
+  );
+}
+
+/**
+ * Project Statusを日本語表示へ変換する。
+ *
+ * Backend / Frontendでは、
+ *
+ * draft
+ * proposal
+ * negotiation
+ * in_progress
+ * completed
+ * cancelled
+ *
+ * の6種類を共通して使用する。
+ *
+ * Union型で定義されているすべての値を
+ * switch内で処理することで、
+ * 必ずstringが返ることをTypeScriptへ保証する。
+ */
+function getProjectStatusLabel(
+  status: ProjectStatus,
+): string {
+  switch (status) {
+    case "draft":
+      return "下書き";
+
+    case "proposal":
+      return "提案中";
+
+    case "negotiation":
+      return "交渉中";
+
+    case "in_progress":
+      return "進行中";
+
+    case "completed":
+      return "完了";
+
+    case "cancelled":
+      return "中止";
+  }
+}
+
+/**
+ * Project Priorityを日本語表示へ変換する。
+ */
+function getPriorityLabel(
+  priority: ProjectPriority,
+): string {
+  switch (priority) {
+    case "high":
+      return "高";
+
+    case "medium":
+      return "中";
+
+    case "low":
+      return "低";
+  }
+}
+
+/**
+ * Project Priorityごとの表示Classを取得する。
+ */
+function getPriorityClass(
+  priority: ProjectPriority,
+): string {
+  switch (priority) {
+    case "high":
+      return "bg-red-50 text-red-500";
+
+    case "medium":
+      return "bg-orange-50 text-orange-500";
+
+    case "low":
+      return "bg-emerald-50 text-emerald-600";
+  }
+}
+
+/**
+ * Project Statusの件数から
+ * CSSのconic-gradientを生成する。
+ *
+ * グラフライブラリを追加せず、
+ * 既存Dashboardデザインを維持したまま
+ * DBの実データをドーナツグラフへ反映する。
+ */
+function createProjectStatusGradient(
+  statuses: ProjectStatusItem[],
+): string {
+  /**
+   * 全Statusの件数を合計する。
+   */
+  const total =
+    statuses.reduce(
+      (
+        sum,
+        status,
+      ) =>
+        sum + status.count,
+      0,
+    );
+
+  /**
+   * Projectが1件も存在しない場合。
+   *
+   * 0除算を防ぎ、
+   * 空のDashboardでもグラフ領域を維持する。
+   */
+  if (total === 0) {
+    return "conic-gradient(#e2e8f0 0deg 360deg)";
+  }
+
+  let currentDegree = 0;
+
+  /**
+   * 各Statusの件数割合を
+   * 360度へ変換する。
+   */
+  const segments =
+    statuses.map(
+      (status) => {
+        const startDegree =
+          currentDegree;
+
+        const degree =
+          (
+            status.count /
+            total
+          ) * 360;
+
+        currentDegree +=
+          degree;
+
+        return [
+          status.chartColor,
+          `${startDegree}deg`,
+          `${currentDegree}deg`,
+        ].join(" ");
+      },
+    );
+
+  return `conic-gradient(${segments.join(", ")})`;
+}
+
+/**
+ * SalesFlow AI Dashboard。
+ *
+ * Laravel Dashboard APIから、
+ * Login Userが所有するCustomer / Projectの
+ * 集計情報を取得して表示する。
+ *
+ * データの流れ：
+ *
+ * PostgreSQL
+ *      ↓
+ * Laravel
  * GET /api/v1/dashboard
- *
- * などから取得したデータへ置き換える予定。
- * ========================================================= */
-
-/**
- * Dashboard上部に表示する4つの集計カード。
- *
- * SummaryCard[] と指定することで、
- * 配列の各要素がSummaryCard型に沿っているか
- * TypeScriptがチェックしてくれる。
+ *      ↓
+ * auth:sanctum
+ *      ↓
+ * getDashboard()
+ *      ↓
+ * Next.js Server Component
+ *      ↓
+ * Dashboard UI
  */
-const summaryCards: SummaryCard[] = [
-  {
-    title: "顧客数",
-    value: "52",
-    unit: "件",
-    change: "+12%",
-    icon: Users,
-    iconClass: "bg-emerald-100 text-emerald-600",
-    changeClass: "bg-emerald-50 text-emerald-600",
-  },
-  {
-    title: "案件数",
-    value: "18",
-    unit: "件",
-    change: "+6%",
-    icon: BriefcaseBusiness,
-    iconClass: "bg-blue-100 text-blue-600",
-    changeClass: "bg-blue-50 text-blue-600",
-  },
-  {
-    title: "未完了タスク",
-    value: "12",
-    unit: "件",
-    change: "+20%",
-    icon: ListTodo,
-    iconClass: "bg-orange-100 text-orange-600",
-    changeClass: "bg-emerald-50 text-emerald-600",
-  },
-  {
-    title: "今月の商談",
-    value: "8",
-    unit: "件",
-    change: "+33%",
-    icon: CalendarDays,
-    iconClass: "bg-violet-100 text-violet-600",
-    changeClass: "bg-blue-50 text-blue-600",
-  },
-];
+export default async function DashboardPage() {
+  /**
+   * BrowserからNext.js Server Componentへ届いた
+   * Laravel Session Cookieを取得する。
+   *
+   * Server ComponentからLaravelへRequestするときは
+   * Browser Cookieが自動転送されないため、
+   * getServerAuthRequestInit()を利用する。
+   */
+  const authInit =
+    await getServerAuthRequestInit();
 
-/**
- * Dashboardへ表示する案件ステータス。
- *
- * 将来的にはprojectsテーブルのstatusを
- * Laravel側で集計して取得する想定。
- */
-const projectStatuses: ProjectStatus[] = [
-  {
-    label: "提案中",
-    count: 5,
-    colorClass: "bg-blue-600",
-  },
-  {
-    label: "進行中",
-    count: 6,
-    colorClass: "bg-blue-400",
-  },
-  {
-    label: "完了",
-    count: 5,
-    colorClass: "bg-green-400",
-  },
-  {
-    label: "下書き",
-    count: 2,
-    colorClass: "bg-amber-400",
-  },
-  {
-    label: "中止",
-    count: 1,
-    colorClass: "bg-rose-400",
-  },
-];
+  /**
+   * Laravel Dashboard APIから、
+   * Login User専用のDashboard情報を取得する。
+   */
+  const dashboard =
+    await getDashboard(
+      authInit,
+    );
 
-/**
- * 今後対応予定のタスク一覧。
- *
- * 現在はMockデータ。
- * 将来的にはLaravelのtasksテーブルから
- * ログインユーザーに関係するタスクを取得する。
- */
-const tasks: DashboardTask[] = [
-  {
-    id: 1,
-    title: "A社へ見積書提出",
-    dueDate: "2026/10/10",
-    priority: "高",
-  },
-  {
-    id: 2,
-    title: "B社へ連絡",
-    dueDate: "2026/10/12",
-    priority: "中",
-  },
-  {
-    id: 3,
-    title: "C社LP案件対応",
-    dueDate: "2026/10/15",
-    priority: "中",
-  },
-  {
-    id: 4,
-    title: "デザイン確認",
-    dueDate: "2026/10/15",
-    priority: "低",
-  },
-];
+  const {
+    summary,
+    projectStatusCounts,
+    recentProjects,
+    upcomingProjects,
+  } = dashboard;
 
-/**
- * 最近登録された商談情報。
- *
- * Laravel API完成後は、
- * meeting_notesテーブルなどから
- * 最新の商談を取得する形へ変更する。
- */
-const recentMeetings: RecentMeeting[] = [
-  {
-    customer: "A社株式会社",
-    project: "Webサイトリニューアル",
-    date: "2026/10/08",
-  },
-  {
-    customer: "B社株式会社",
-    project: "ECサイト構築",
-    date: "2026/10/06",
-  },
-  {
-    customer: "C社商事",
-    project: "システム開発",
-    date: "2026/10/05",
-  },
-];
+  /**
+   * Dashboard上部へ表示する4つの集計カード。
+   *
+   * 以前のMockでは前月比を表示していたが、
+   * 現在は前月データを保存・比較していないため、
+   * 架空の増減率は表示しない。
+   */
+  const summaryCards:
+    SummaryCard[] = [
+    {
+      title:
+        "顧客数",
 
-/**
- * Dashboardのお知らせ一覧。
- *
- * 現段階では固定データだが、
- * 後々はタスク期限通知やAI処理完了通知などを
- * Laravel側から取得できるようにする。
- */
-const notifications: Notification[] = [
-  {
-    id: 1,
-    date: "2026/10/08",
-    message: "A社商談を登録しました。",
-  },
-  {
-    id: 2,
-    date: "2026/10/06",
-    message: "タスクの期限が明日になりました。",
-  },
-  {
-    id: 3,
-    date: "2026/10/03",
-    message: "新しい分析機能をリリースしました。",
-  },
-];
+      value:
+        String(
+          summary.customerCount,
+        ),
 
+      unit:
+        "件",
 
-/* =========================================================
- * Dashboardページ
- * ========================================================= */
+      description:
+        "登録済み顧客",
 
-/**
- * SalesFlow AI Dashboard画面。
- *
- * 営業活動に必要な情報を1画面で確認できるようにする。
- *
- * 主な表示内容：
- *
- * ・顧客数
- * ・案件数
- * ・未完了タスク
- * ・今月の商談
- * ・案件ステータス
- * ・今後のタスク
- * ・最近の商談
- * ・お知らせ
- *
- * 現在はServer Componentとして動作する。
- *
- * useStateやuseEffectなどを使用していないため、
- * "use client" は不要。
- */
-export default function DashboardPage() {
+      icon:
+        Users,
+
+      iconClass:
+        "bg-emerald-100 text-emerald-600",
+
+      descriptionClass:
+        "bg-emerald-50 text-emerald-600",
+    },
+
+    {
+      title:
+        "案件数",
+
+      value:
+        String(
+          summary.projectCount,
+        ),
+
+      unit:
+        "件",
+
+      description:
+        "全案件",
+
+      icon:
+        BriefcaseBusiness,
+
+      iconClass:
+        "bg-blue-100 text-blue-600",
+
+      descriptionClass:
+        "bg-blue-50 text-blue-600",
+    },
+
+    {
+      title:
+        "進行中案件",
+
+      value:
+        String(
+          summary
+            .inProgressProjectCount,
+        ),
+
+      unit:
+        "件",
+
+      description:
+        "現在進行中",
+
+      icon:
+        Clock3,
+
+      iconClass:
+        "bg-orange-100 text-orange-600",
+
+      descriptionClass:
+        "bg-orange-50 text-orange-600",
+    },
+
+    {
+      title:
+        "案件総額",
+
+      value:
+        formatCurrency(
+          summary
+            .totalProjectAmount,
+        ),
+
+      unit:
+        "",
+
+      description:
+        "登録案件の合計",
+
+      icon:
+        Banknote,
+
+      iconClass:
+        "bg-violet-100 text-violet-600",
+
+      descriptionClass:
+        "bg-violet-50 text-violet-600",
+    },
+  ];
+
+  /**
+   * Laravel Dashboard APIのStatus集計を、
+   * Dashboard表示用データへ変換する。
+   *
+   * Projectで使用できるStatusは、
+   *
+   * draft
+   * proposal
+   * negotiation
+   * in_progress
+   * completed
+   * cancelled
+   *
+   * の6種類。
+   *
+   * Backend / Frontendで同じStatusを使用することで、
+   * APIとUIの定義に差が発生しないようにする。
+   */
+  const projectStatuses:
+    ProjectStatusItem[] = [
+    {
+      key:
+        "proposal",
+
+      label:
+        "提案中",
+
+      count:
+        projectStatusCounts
+          .proposal,
+
+      colorClass:
+        "bg-blue-600",
+
+      chartColor:
+        "#2563eb",
+    },
+
+    {
+      key:
+        "negotiation",
+
+      label:
+        "交渉中",
+
+      count:
+        projectStatusCounts
+          .negotiation,
+
+      colorClass:
+        "bg-cyan-400",
+
+      chartColor:
+        "#22d3ee",
+    },
+
+    {
+      key:
+        "inProgress",
+
+      label:
+        "進行中",
+
+      count:
+        projectStatusCounts
+          .inProgress,
+
+      colorClass:
+        "bg-blue-400",
+
+      chartColor:
+        "#60a5fa",
+    },
+
+    {
+      key:
+        "completed",
+
+      label:
+        "完了",
+
+      count:
+        projectStatusCounts
+          .completed,
+
+      colorClass:
+        "bg-green-400",
+
+      chartColor:
+        "#4ade80",
+    },
+
+    {
+      key:
+        "draft",
+
+      label:
+        "下書き",
+
+      count:
+        projectStatusCounts
+          .draft,
+
+      colorClass:
+        "bg-amber-400",
+
+      chartColor:
+        "#fbbf24",
+    },
+
+    {
+      key:
+        "cancelled",
+
+      label:
+        "中止",
+
+      count:
+        projectStatusCounts
+          .cancelled,
+
+      colorClass:
+        "bg-rose-400",
+
+      chartColor:
+        "#fb7185",
+    },
+  ];
+
+  /**
+   * Status件数から
+   * ドーナツグラフ背景を生成する。
+   */
+  const projectStatusGradient =
+    createProjectStatusGradient(
+      projectStatuses,
+    );
+
   return (
     <div className="space-y-6">
-
-      {/* =====================================================
+      {/* =============================================
        * ページタイトル
-       * ===================================================== */}
+       * ============================================= */}
       <section>
         <h1 className="text-3xl font-bold tracking-tight text-slate-900">
           ダッシュボード
@@ -323,124 +640,106 @@ export default function DashboardPage() {
         </p>
       </section>
 
-
-      {/* =====================================================
+      {/* =============================================
        * Dashboard上部 集計カード
-       * =====================================================
-       *
-       * summaryCards配列をmap()で繰り返し処理し、
-       * 同じデザインのカードを4件生成する。
-       *
-       * 同じHTMLを4回書かずに済むため、
-       * 修正もしやすくなる。
-       * ===================================================== */}
+       * ============================================= */}
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {summaryCards.map((card) => {
-          /*
-           * card.iconにはLucideアイコンの
-           * Reactコンポーネントが保存されている。
-           *
-           * 大文字から始まるIconという変数へ代入することで、
-           * <Icon />としてJSX内で使用できる。
-           */
-          const Icon = card.icon;
+        {summaryCards.map(
+          (card) => {
+            /**
+             * SummaryCardへ保持した
+             * Lucide Icon Component。
+             */
+            const Icon =
+              card.icon;
 
-          return (
-            <div
-              key={card.title}
-              className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
-            >
-              <div className="flex items-start justify-between">
+            return (
+              <div
+                key={card.title}
+                className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-slate-500">
+                      {card.title}
+                    </p>
 
-                {/* カード左側 */}
-                <div>
-                  <p className="text-sm font-medium text-slate-500">
-                    {card.title}
-                  </p>
+                    <div className="mt-4 flex items-end gap-1">
+                      <span className="break-all text-3xl font-bold text-slate-900 xl:text-4xl">
+                        {card.value}
+                      </span>
 
-                  <div className="mt-4 flex items-end gap-1">
-                    <span className="text-4xl font-bold text-slate-900">
-                      {card.value}
-                    </span>
+                      {card.unit !== "" && (
+                        <span className="mb-1 text-sm font-semibold text-slate-600">
+                          {card.unit}
+                        </span>
+                      )}
+                    </div>
+                  </div>
 
-                    <span className="mb-1 text-sm font-semibold text-slate-600">
-                      {card.unit}
-                    </span>
+                  <div
+                    className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${card.iconClass}`}
+                  >
+                    <Icon
+                      size={22}
+                    />
                   </div>
                 </div>
 
-                {/* カード右上のアイコン */}
-                <div
-                  className={`flex h-11 w-11 items-center justify-center rounded-xl ${card.iconClass}`}
-                >
-                  <Icon size={22} />
+                <div className="mt-4">
+                  <span
+                    className={`rounded-full px-2.5 py-1 text-xs font-semibold ${card.descriptionClass}`}
+                  >
+                    {card.description}
+                  </span>
                 </div>
               </div>
-
-              {/* 前月比などの増減表示 */}
-              <div className="mt-4">
-                <span
-                  className={`rounded-full px-2.5 py-1 text-xs font-semibold ${card.changeClass}`}
-                >
-                  ↑ {card.change}
-                </span>
-              </div>
-            </div>
-          );
-        })}
+            );
+          },
+        )}
       </section>
 
-
-      {/* =====================================================
+      {/* =============================================
        * Dashboardメイン領域
        *
-       * PCでは2列表示、
-       * 小さい画面では1列表示にする。
-       * ===================================================== */}
+       * PCでは2列、
+       * 小さい画面では1列表示する。
+       * ============================================= */}
       <section className="grid gap-6 xl:grid-cols-2">
-
-        {/* ===================================================
+        {/* ===========================================
          * 案件ステータス
-         * =================================================== */}
+         * =========================================== */}
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold text-slate-900">
+              案件ステータス
+            </h2>
 
-          <h2 className="text-xl font-bold text-slate-900">
-            案件ステータス
-          </h2>
+            <Link
+              href="/projects"
+              className="text-sm font-semibold text-blue-600 hover:text-blue-700"
+            >
+              案件一覧
+            </Link>
+          </div>
 
           <div className="mt-6 flex flex-col items-center gap-8 sm:flex-row">
-
-            {/*
-             * 現段階ではグラフライブラリを使わず、
-             * CSSのconic-gradientでドーナツグラフを再現する。
-             *
-             * Laravel API接続後、
-             * 案件件数を動的に表示したくなった段階で
-             * Rechartsなどへ変更する予定。
-             */}
+            {/* 実案件件数から生成したドーナツグラフ */}
             <div
-              className="
-                relative
-                flex
-                h-52
-                w-52
-                shrink-0
-                items-center
-                justify-center
-                rounded-full
-                bg-[conic-gradient(
-                  #2563eb_0deg_100deg,
-                  #60a5fa_100deg_220deg,
-                  #4ade80_220deg_310deg,
-                  #fbbf24_310deg_345deg,
-                  #fb7185_345deg_360deg
-                )]
-              "
+              className="relative flex h-52 w-52 shrink-0 items-center justify-center rounded-full"
+              style={{
+                background:
+                  projectStatusGradient,
+              }}
             >
-              {/* ドーナツグラフ中央の白い円 */}
+              {/* ドーナツ中央 */}
               <div className="flex h-32 w-32 flex-col items-center justify-center rounded-full bg-white">
                 <span className="text-3xl font-bold text-slate-900">
-                  18件
+                  {
+                    summary
+                      .projectCount
+                  }
+                  件
                 </span>
 
                 <span className="text-sm text-slate-400">
@@ -449,217 +748,276 @@ export default function DashboardPage() {
               </div>
             </div>
 
-
-            {/* 案件ステータス凡例 */}
+            {/* Status凡例 */}
             <div className="w-full space-y-4">
-              {projectStatuses.map((status) => (
-                <div
-                  key={status.label}
-                  className="flex items-center justify-between gap-6"
-                >
-                  <div className="flex items-center gap-3">
+              {projectStatuses.map(
+                (status) => (
+                  <div
+                    key={status.key}
+                    className="flex items-center justify-between gap-6"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span
+                        className={`h-3 w-3 rounded ${status.colorClass}`}
+                      />
 
-                    {/* ステータスごとの色 */}
-                    <span
-                      className={`h-3 w-3 rounded ${status.colorClass}`}
-                    />
+                      <span className="text-sm text-slate-600">
+                        {
+                          status.label
+                        }
+                      </span>
+                    </div>
 
-                    <span className="text-sm text-slate-600">
-                      {status.label}
+                    <span className="text-sm font-bold text-slate-800">
+                      {
+                        status.count
+                      }
                     </span>
                   </div>
-
-                  {/* ステータスごとの案件件数 */}
-                  <span className="text-sm font-bold text-slate-800">
-                    {status.count}
-                  </span>
-                </div>
-              ))}
+                ),
+              )}
             </div>
           </div>
         </div>
 
-
-        {/* ===================================================
-         * 今後のタスク
-         * =================================================== */}
+        {/* ===========================================
+         * 期限が近い案件
+         * =========================================== */}
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-
-          {/* タイトルとリンク */}
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-bold text-slate-900">
-              今後のタスク
+              期限が近い案件
             </h2>
 
-            {/*
-             * 現段階では画面デザイン用のbutton。
-             *
-             * /tasks画面を作成した後は
-             * Next.jsの<Link>へ変更する。
-             */}
-            <button
-              type="button"
+            <Link
+              href="/projects"
               className="text-sm font-semibold text-blue-600 hover:text-blue-700"
             >
               すべて見る
-            </button>
+            </Link>
           </div>
 
+          {upcomingProjects.length ===
+          0 ? (
+            <div className="mt-5 rounded-xl bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+              期限が近い案件はありません。
+            </div>
+          ) : (
+            <div className="mt-5 divide-y divide-slate-100">
+              {upcomingProjects.map(
+                (project) => (
+                  <div
+                    key={project.id}
+                    className="flex items-center gap-4 py-4"
+                  >
+                    <div className="min-w-0 flex-1">
+                      {/* 案件詳細へのLink */}
+                      <Link
+                        href={`/projects/${project.id}`}
+                        className="block truncate text-sm font-semibold text-slate-700 hover:text-blue-600"
+                      >
+                        {
+                          project.name
+                        }
+                      </Link>
 
-          {/* タスク一覧 */}
-          <div className="mt-5 divide-y divide-slate-100">
+                      {/* 顧客名 */}
+                      <p className="mt-1 truncate text-xs text-slate-400">
+                        {
+                          project
+                            .customerName
+                        }
+                      </p>
+                    </div>
 
-            {tasks.map((task) => (
-              <div
-                key={task.id}
-                className="flex items-center gap-4 py-4"
-              >
-                {/* 完了チェック */}
-                <input
-                  type="checkbox"
-                  className="h-5 w-5 rounded border-slate-300"
-                />
+                    {/* 期限 */}
+                    <span className="hidden text-sm text-slate-400 sm:block">
+                      {formatDate(
+                        project
+                          .dueDate,
+                      )}
+                    </span>
 
-                {/* タスク名 */}
-                <p className="min-w-0 flex-1 truncate text-sm font-medium text-slate-700">
-                  {task.title}
-                </p>
-
-                {/* PC・タブレット時のみ期限を表示 */}
-                <span className="hidden text-sm text-slate-400 sm:block">
-                  {task.dueDate}
-                </span>
-
-                {/*
-                 * priorityの値によって色を切り替える。
-                 *
-                 * 高 → 赤
-                 * 中 → オレンジ
-                 * 低 → 緑
-                 */}
-                <span
-                  className={[
-                    "rounded-full px-2.5 py-1 text-xs font-semibold",
-
-                    task.priority === "高"
-                      ? "bg-red-50 text-red-500"
-                      : task.priority === "中"
-                        ? "bg-orange-50 text-orange-500"
-                        : "bg-emerald-50 text-emerald-600",
-                  ].join(" ")}
-                >
-                  {task.priority}
-                </span>
-              </div>
-            ))}
-          </div>
+                    {/* 優先度 */}
+                    <span
+                      className={[
+                        "rounded-full px-2.5 py-1 text-xs font-semibold",
+                        getPriorityClass(
+                          project
+                            .priority,
+                        ),
+                      ].join(" ")}
+                    >
+                      {getPriorityLabel(
+                        project
+                          .priority,
+                      )}
+                    </span>
+                  </div>
+                ),
+              )}
+            </div>
+          )}
         </div>
 
-
-        {/* ===================================================
-         * 最近の商談
-         * =================================================== */}
+        {/* ===========================================
+         * 最近の案件
+         * =========================================== */}
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-bold text-slate-900">
-              最近の商談
+              最近の案件
             </h2>
 
-            <button
-              type="button"
+            <Link
+              href="/projects"
               className="text-sm font-semibold text-blue-600 hover:text-blue-700"
             >
               すべて見る
-            </button>
+            </Link>
           </div>
 
+          {recentProjects.length ===
+          0 ? (
+            <div className="mt-5 rounded-xl bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+              案件はまだ登録されていません。
+            </div>
+          ) : (
+            <div className="mt-5 divide-y divide-slate-100">
+              {recentProjects.map(
+                (project) => (
+                  <div
+                    key={project.id}
+                    className="grid gap-2 py-4 text-sm sm:grid-cols-[1fr_1.2fr_auto]"
+                  >
+                    <div className="min-w-0">
+                      {/* 案件名 */}
+                      <Link
+                        href={`/projects/${project.id}`}
+                        className="block truncate font-semibold text-slate-700 hover:text-blue-600"
+                      >
+                        {
+                          project.name
+                        }
+                      </Link>
 
-          {/* 最近の商談一覧 */}
-          <div className="mt-5 divide-y divide-slate-100">
+                      {/* 顧客名 */}
+                      <span className="mt-1 block truncate text-xs text-slate-400">
+                        {
+                          project
+                            .customerName
+                        }
+                      </span>
+                    </div>
 
-            {recentMeetings.map((meeting) => (
-              <div
-                /*
-                 * customerとdateを組み合わせて
-                 * Reactのkeyとして使用する。
-                 *
-                 * 本番ではmeeting.idを使用するのが望ましい。
-                 */
-                key={`${meeting.customer}-${meeting.date}`}
-                className="
-                  grid
-                  gap-2
-                  py-4
-                  text-sm
-                  sm:grid-cols-[1fr_1.3fr_auto]
-                "
-              >
-                {/* 顧客名 */}
-                <span className="font-semibold text-slate-700">
-                  {meeting.customer}
-                </span>
+                    <div>
+                      {/* 案件金額 */}
+                      <p className="font-medium text-slate-600">
+                        {formatCurrency(
+                          project
+                            .amount,
+                        )}
+                      </p>
 
-                {/* 案件名 */}
-                <span className="text-slate-600">
-                  {meeting.project}
-                </span>
+                      {/* 案件Status */}
+                      <p className="mt-1 text-xs text-slate-400">
+                        {getProjectStatusLabel(
+                          project
+                            .status,
+                        )}
+                      </p>
+                    </div>
 
-                {/* 商談日 */}
-                <span className="text-slate-400">
-                  {meeting.date}
-                </span>
-              </div>
-            ))}
-          </div>
+                    {/* 最終更新日 */}
+                    <span className="text-slate-400">
+                      {formatUpdatedDate(
+                        project
+                          .updatedAt,
+                      )}
+                    </span>
+                  </div>
+                ),
+              )}
+            </div>
+          )}
         </div>
 
-
-        {/* ===================================================
-         * お知らせ
-         * =================================================== */}
+        {/* ===========================================
+         * 営業データ概要
+         *
+         * Task / Meeting / Notification APIは
+         * まだ実装していないため、
+         * Mock表示は行わない。
+         * =========================================== */}
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <h2 className="text-xl font-bold text-slate-900">
+            営業データ概要
+          </h2>
 
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-bold text-slate-900">
-              お知らせ
-            </h2>
+          <div className="mt-5 space-y-4">
+            {/* Customer数 */}
+            <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-4">
+              <span className="text-sm text-slate-600">
+                登録顧客
+              </span>
 
-            <button
-              type="button"
-              className="text-sm font-semibold text-blue-600 hover:text-blue-700"
-            >
-              すべて見る
-            </button>
+              <span className="font-bold text-slate-900">
+                {
+                  summary
+                    .customerCount
+                }
+                件
+              </span>
+            </div>
+
+            {/* Project総数 */}
+            <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-4">
+              <span className="text-sm text-slate-600">
+                全案件
+              </span>
+
+              <span className="font-bold text-slate-900">
+                {
+                  summary
+                    .projectCount
+                }
+                件
+              </span>
+            </div>
+
+            {/* 進行中Project */}
+            <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-4">
+              <span className="text-sm text-slate-600">
+                進行中案件
+              </span>
+
+              <span className="font-bold text-slate-900">
+                {
+                  summary
+                    .inProgressProjectCount
+                }
+                件
+              </span>
+            </div>
+
+            {/* Project総額 */}
+            <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-4">
+              <span className="text-sm text-slate-600">
+                案件総額
+              </span>
+
+              <span className="font-bold text-slate-900">
+                {formatCurrency(
+                  summary
+                    .totalProjectAmount,
+                )}
+              </span>
+            </div>
           </div>
 
-
-          {/* お知らせ一覧 */}
-          <div className="mt-5 divide-y divide-slate-100">
-
-            {notifications.map((notification) => (
-              <div
-                key={notification.id}
-                className="
-                  grid
-                  gap-2
-                  py-4
-                  text-sm
-                  sm:grid-cols-[120px_1fr]
-                "
-              >
-                {/* 通知日 */}
-                <span className="text-slate-400">
-                  {notification.date}
-                </span>
-
-                {/* 通知内容 */}
-                <span className="text-slate-600">
-                  {notification.message}
-                </span>
-              </div>
-            ))}
-          </div>
+          <p className="mt-5 text-xs leading-6 text-slate-400">
+            タスク・商談・通知機能は今後のAPI実装後にDashboardへ追加します。
+          </p>
         </div>
       </section>
     </div>
