@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\V1\CustomerController;
+use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\ProjectController;
 use App\Http\Resources\Api\V1\UserResource;
 use Illuminate\Http\Request;
@@ -56,6 +57,17 @@ Route::prefix('v1')
                         );
                     },
                 )->name('me');
+
+                /**
+                 * Dashboard API。
+                 *
+                 * Login Userが所有するCustomer / Projectを
+                 * Dashboard表示用に集計して返す。
+                 */
+                Route::get(
+                    '/dashboard',
+                    DashboardController::class,
+                )->name('dashboard');
 
                 /**
                  * Customer REST API。
