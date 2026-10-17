@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\Project;
+use App\Models\Task;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -17,13 +18,17 @@ use Illuminate\Http\Request;
  * ・Project数
  * ・進行中Project数
  * ・Project総額
+ * ・Task数
+ * ・対応中Task数
  * ・Project Status別件数
+ * ・Task Status別件数
  * ・最近のProject
  * ・期限が近いProject
+ * ・期限が近いTask
  *
  * をDashboard表示用にまとめて返す。
  *
- * Customer / Project一覧APIをFrontendから
+ * Customer / Project / Task一覧APIをFrontendから
  * 複数回呼び出して集計するのではなく、
  * Laravel側で集計することで、
  * データ件数が増えても正確な値を取得できる。
@@ -70,6 +75,36 @@ class DashboardController extends Controller
             );
 
         /**
+         * Login Userが所有しているTaskだけを対象にする
+         * Base Query。
+         *
+         * Task自身にはuser_idを持たせていないため、
+         *
+         * User
+         *   ↓
+         * Customer.user_id
+         *   ↓
+         * Project.customer_id
+         *   ↓
+         * Task.project_id
+         *
+         * というRelationを使って所有者を判定する。
+         *
+         * Task REST APIと同じOwnershipルールを
+         * Dashboardでも使用する。
+         */
+        $taskQuery = Task::query()
+            ->whereHas(
+                'project.customer',
+                function (Builder $query) use ($user): void {
+                    $query->where(
+                        'user_id',
+                        $user->id,
+                    );
+                },
+            );
+
+        /**
          * Customer総数。
          *
          * User Modelのcustomers Relationを利用するため、
@@ -106,13 +141,30 @@ class DashboardController extends Controller
                 ->sum('amount');
 
         /**
+         * Task総数。
+         */
+        $taskCount =
+            (clone $taskQuery)->count();
+
+        /**
+         * 現在対応中のTask数。
+         */
+        $inProgressTaskCount =
+            (clone $taskQuery)
+                ->where(
+                    'status',
+                    'in_progress',
+                )
+                ->count();
+
+        /**
          * StatusごとのProject件数を取得する。
          *
          * DBに存在しないStatusについても
          * Frontend側で常に同じJSON構造を扱えるよう、
          * 後ほど0件を補完する。
          */
-        $statusCounts =
+        $projectStatusCountData =
             (clone $projectQuery)
                 ->selectRaw(
                     'status, COUNT(*) AS aggregate',
@@ -136,38 +188,86 @@ class DashboardController extends Controller
          * cancelled
          *
          * の6種類を使用する。
-         *
-         * 該当データが存在しないStatusも
-         * 0を返すことでFrontend側の処理を単純化する。
          */
         $projectStatusCounts = [
             'draft' => (int) (
-                $statusCounts['draft']
+                $projectStatusCountData['draft']
                 ?? 0
             ),
 
             'proposal' => (int) (
-                $statusCounts['proposal']
+                $projectStatusCountData['proposal']
                 ?? 0
             ),
 
             'negotiation' => (int) (
-                $statusCounts['negotiation']
+                $projectStatusCountData['negotiation']
                 ?? 0
             ),
 
             'inProgress' => (int) (
-                $statusCounts['in_progress']
+                $projectStatusCountData['in_progress']
                 ?? 0
             ),
 
             'completed' => (int) (
-                $statusCounts['completed']
+                $projectStatusCountData['completed']
                 ?? 0
             ),
 
             'cancelled' => (int) (
-                $statusCounts['cancelled']
+                $projectStatusCountData['cancelled']
+                ?? 0
+            ),
+        ];
+
+        /**
+         * StatusごとのTask件数を取得する。
+         *
+         * Task Domainで使用するStatusは、
+         *
+         * todo
+         * in_progress
+         * completed
+         * cancelled
+         *
+         * の4種類。
+         */
+        $taskStatusCountData =
+            (clone $taskQuery)
+                ->selectRaw(
+                    'status, COUNT(*) AS aggregate',
+                )
+                ->groupBy('status')
+                ->pluck(
+                    'aggregate',
+                    'status',
+                );
+
+        /**
+         * Task Status別件数。
+         *
+         * DBに該当Taskが存在しないStatusについても
+         * 必ず0を返す。
+         */
+        $taskStatusCounts = [
+            'todo' => (int) (
+                $taskStatusCountData['todo']
+                ?? 0
+            ),
+
+            'inProgress' => (int) (
+                $taskStatusCountData['in_progress']
+                ?? 0
+            ),
+
+            'completed' => (int) (
+                $taskStatusCountData['completed']
+                ?? 0
+            ),
+
+            'cancelled' => (int) (
+                $taskStatusCountData['cancelled']
                 ?? 0
             ),
         ];
@@ -177,9 +277,6 @@ class DashboardController extends Controller
          *
          * Statusに関係なく、
          * 最終更新日時が新しい順で最大5件取得する。
-         *
-         * DashboardからProject詳細へ遷移できるよう、
-         * Customer名など表示に必要な情報も返す。
          */
         $recentProjects =
             (clone $projectQuery)
@@ -220,12 +317,6 @@ class DashboardController extends Controller
          * ・今日以降の期限だけ対象
          * ・期限が近い順
          * ・最大5件
-         *
-         * とする。
-         *
-         * completed / cancelledは
-         * 今後対応する案件ではないため、
-         * Dashboardの「期限が近い案件」には表示しない。
          */
         $upcomingProjects =
             (clone $projectQuery)
@@ -270,14 +361,82 @@ class DashboardController extends Controller
                 ->values();
 
         /**
+         * 期限が近いTask。
+         *
+         * ・完了済みは除外
+         * ・中止済みは除外
+         * ・期限未設定は除外
+         * ・今日以降の期限だけ対象
+         * ・期限が近い順
+         * ・最大5件
+         *
+         * DashboardからTask編集画面や
+         * Project詳細へ遷移できるよう、
+         * Project / Customer情報も取得する。
+         */
+        $upcomingTasks =
+            (clone $taskQuery)
+                ->with([
+                    'project:id,customer_id,name',
+                    'project.customer:id,name',
+                ])
+                ->whereNotIn(
+                    'status',
+                    [
+                        'completed',
+                        'cancelled',
+                    ],
+                )
+                ->whereNotNull(
+                    'due_date',
+                )
+                ->whereDate(
+                    'due_date',
+                    '>=',
+                    today(),
+                )
+                ->orderBy(
+                    'due_date',
+                )
+                ->limit(5)
+                ->get()
+                ->map(
+                    function (Task $task): array {
+                        return [
+                            'id' => $task->id,
+
+                            'projectId' => $task->project->id,
+
+                            'projectName' => $task->project->name,
+
+                            'customerName' => $task->project
+                                ->customer
+                                ->name,
+
+                            'title' => $task->title,
+
+                            'status' => $task->status,
+
+                            'priority' => $task->priority,
+
+                            'dueDate' => $task->due_date
+                                ?->format('Y-m-d'),
+                        ];
+                    },
+                )
+                ->values();
+
+        /**
          * Dashboard専用Response。
          *
          * Frontend側では、
          *
          * response.data.summary
          * response.data.projectStatusCounts
+         * response.data.taskStatusCounts
          * response.data.recentProjects
          * response.data.upcomingProjects
+         * response.data.upcomingTasks
          *
          * として利用する。
          */
@@ -291,13 +450,21 @@ class DashboardController extends Controller
                     'inProgressProjectCount' => $inProgressProjectCount,
 
                     'totalProjectAmount' => $totalProjectAmount,
+
+                    'taskCount' => $taskCount,
+
+                    'inProgressTaskCount' => $inProgressTaskCount,
                 ],
 
                 'projectStatusCounts' => $projectStatusCounts,
 
+                'taskStatusCounts' => $taskStatusCounts,
+
                 'recentProjects' => $recentProjects,
 
                 'upcomingProjects' => $upcomingProjects,
+
+                'upcomingTasks' => $upcomingTasks,
             ],
         ]);
     }
