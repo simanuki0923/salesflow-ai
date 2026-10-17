@@ -25,6 +25,11 @@ import {
   getServerAuthRequestInit,
 } from "@/lib/api/server-auth";
 
+import {
+  getTasks,
+  mapTask,
+} from "@/lib/api/tasks";
+
 export const dynamic =
   "force-dynamic";
 
@@ -35,16 +40,45 @@ type ProjectDetailPageProps = {
 };
 
 /**
- * Project詳細ページ。
+ * Project詳細Page。
+ *
+ * Project本体と、
+ * Projectに所属するTaskを
+ * Laravel REST APIから取得する。
+ *
+ * データの流れ：
+ *
+ * Browser
+ * ↓
+ * Next.js Server Component
+ * ↓
+ * Project API
+ * ↓
+ * Project存在・所有権確認
+ * ↓
+ * Task API
+ * ↓
+ * ProjectDetail
+ * ↓
+ * ProjectTasks
  */
 export default async function ProjectDetailPage({
   params,
 }: ProjectDetailPageProps) {
-  const { id } = await params;
+  const { id } =
+    await params;
 
   const projectId =
     Number(id);
 
+  /**
+   * URL Parameter Validation。
+   *
+   * ・整数ではない
+   * ・0以下
+   *
+   * の場合は404。
+   */
   if (
     !Number.isInteger(
       projectId,
@@ -56,14 +90,19 @@ export default async function ProjectDetailPage({
 
   /**
    * Laravel Session Cookieを取得する。
+   *
+   * Server ComponentからLaravelへ
+   * Login Sessionを転送するため使用する。
    */
   const authInit =
     await getServerAuthRequestInit();
 
   /**
-   * API Requestだけをtry/catchする。
+   * まずProject本体を取得する。
    *
-   * JSXはtry/catchに入れない。
+   * 先にProjectの存在・所有権を確認することで、
+   * 存在しないProject IDに対して
+   * Task APIを呼び出すことを防ぐ。
    */
   let apiProject;
 
@@ -75,8 +114,9 @@ export default async function ProjectDetailPage({
       );
   } catch (error) {
     /**
-     * Projectが存在しない、
-     * または他User所有Projectなら404。
+     * Projectが存在しない場合、
+     * または他User所有Projectの場合、
+     * Laravelは404を返す。
      */
     if (
       error instanceof ApiError &&
@@ -85,29 +125,97 @@ export default async function ProjectDetailPage({
       notFound();
     }
 
+    /**
+     * 404以外はNext.js側の
+     * Error Handlingへ渡す。
+     */
     throw error;
   }
 
+  /**
+   * Projectの存在と所有権が確認できた後で、
+   * このProjectに所属するTaskを取得する。
+   *
+   * GET /api/v1/tasks
+   *     ?projectId={projectId}
+   *     &perPage=100
+   *
+   * Laravel側でもUser Scopeが適用される。
+   */
+  const apiTasks =
+    await getTasks(
+      {
+        projectId,
+        perPage: 100,
+      },
+      authInit,
+    );
+
+  /**
+   * Laravel TaskResource Dataを、
+   * Frontend UI用Taskへ変換する。
+   */
+  const tasks =
+    apiTasks.map(
+      mapTask,
+    );
+
+  /**
+   * Project本体と関連Taskを
+   * ProjectDetailへまとめる。
+   *
+   * mapProjectDetail:
+   *
+   * ProjectApiData
+   * +
+   * Task[]
+   *
+   * ↓
+   *
+   * ProjectDetail
+   */
   const project =
     mapProjectDetail(
       apiProject,
+      tasks,
     );
 
   return (
     <div className="space-y-6">
+      {/* ================================================
+       * Project Header
+       * ================================================ */}
       <ProjectDetailHeader
         project={project}
       />
 
+      {/* ================================================
+       * Project Overview
+       * ================================================ */}
       <ProjectOverview
         project={project}
       />
 
+      {/* ================================================
+       * Related Data
+       * ================================================ */}
       <div className="grid gap-6 xl:grid-cols-2">
+        {/*
+         * Laravel Task APIから取得した
+         * 実Task Data。
+         */}
         <ProjectTasks
-          tasks={project.tasks}
+          tasks={
+            project.tasks
+          }
         />
 
+        {/*
+         * ActivityはまだAPI未実装。
+         *
+         * 現段階ではmapProjectDetail()から
+         * 空配列が渡される。
+         */}
         <ProjectActivity
           activities={
             project.activities
@@ -115,6 +223,9 @@ export default async function ProjectDetailPage({
         />
       </div>
 
+      {/* ================================================
+       * Project Memo
+       * ================================================ */}
       {project.notes && (
         <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <h2 className="text-lg font-bold text-slate-900">
