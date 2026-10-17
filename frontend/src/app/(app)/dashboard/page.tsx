@@ -17,6 +17,7 @@ import {
 
 import type {
   DashboardProjectStatusCounts,
+  DashboardTaskStatusCounts,
 } from "@/lib/api/dashboard";
 
 import {
@@ -27,6 +28,11 @@ import type {
   ProjectPriority,
   ProjectStatus,
 } from "@/types/project";
+
+import type {
+  TaskPriority,
+  TaskStatus,
+} from "@/types/task";
 
 /**
  * DashboardはPostgreSQLの最新情報を表示するため、
@@ -94,6 +100,38 @@ type ProjectStatusItem = {
 
   /**
    * 該当ステータスの案件数。
+   */
+  count: number;
+
+  /**
+   * 凡例で使用するTailwind CSS。
+   */
+  colorClass: string;
+
+  /**
+   * ドーナツグラフで使用する色。
+   */
+  chartColor: string;
+};
+
+/**
+ * DashboardのTaskステータス表示用。
+ */
+type TaskStatusItem = {
+  /**
+   * Laravel Dashboard APIの
+   * taskStatusCountsと対応するKey。
+   */
+  key:
+    keyof DashboardTaskStatusCounts;
+
+  /**
+   * 日本語表示名。
+   */
+  label: string;
+
+  /**
+   * 該当StatusのTask件数。
    */
   count: number;
 
@@ -194,10 +232,6 @@ function formatUpdatedDate(
  * cancelled
  *
  * の6種類を共通して使用する。
- *
- * Union型で定義されているすべての値を
- * switch内で処理することで、
- * 必ずstringが返ることをTypeScriptへ保証する。
  */
 function getProjectStatusLabel(
   status: ProjectStatus,
@@ -224,10 +258,21 @@ function getProjectStatusLabel(
 }
 
 /**
- * Project Priorityを日本語表示へ変換する。
+ * Project / Task Priorityを
+ * 日本語表示へ変換する。
+ *
+ * ProjectとTaskは同じ
+ *
+ * high
+ * medium
+ * low
+ *
+ * を使用しているため共通化する。
  */
 function getPriorityLabel(
-  priority: ProjectPriority,
+  priority:
+    | ProjectPriority
+    | TaskPriority,
 ): string {
   switch (priority) {
     case "high":
@@ -242,10 +287,13 @@ function getPriorityLabel(
 }
 
 /**
- * Project Priorityごとの表示Classを取得する。
+ * Project / Task Priorityごとの
+ * 表示Classを取得する。
  */
 function getPriorityClass(
-  priority: ProjectPriority,
+  priority:
+    | ProjectPriority
+    | TaskPriority,
 ): string {
   switch (priority) {
     case "high":
@@ -256,6 +304,48 @@ function getPriorityClass(
 
     case "low":
       return "bg-emerald-50 text-emerald-600";
+  }
+}
+
+/**
+ * Task Statusを日本語表示へ変換する。
+ */
+function getTaskStatusLabel(
+  status: TaskStatus,
+): string {
+  switch (status) {
+    case "todo":
+      return "未着手";
+
+    case "in_progress":
+      return "対応中";
+
+    case "completed":
+      return "完了";
+
+    case "cancelled":
+      return "中止";
+  }
+}
+
+/**
+ * Task Statusごとの表示Class。
+ */
+function getTaskStatusClass(
+  status: TaskStatus,
+): string {
+  switch (status) {
+    case "todo":
+      return "bg-slate-100 text-slate-600";
+
+    case "in_progress":
+      return "bg-blue-50 text-blue-600";
+
+    case "completed":
+      return "bg-emerald-50 text-emerald-600";
+
+    case "cancelled":
+      return "bg-rose-50 text-rose-600";
   }
 }
 
@@ -326,15 +416,80 @@ function createProjectStatusGradient(
 }
 
 /**
+ * Task Statusの件数から
+ * CSSのconic-gradientを生成する。
+ */
+function createTaskStatusGradient(
+  statuses: TaskStatusItem[],
+): string {
+  /**
+   * 全Task Status件数を合計する。
+   */
+  const total =
+    statuses.reduce(
+      (
+        sum,
+        status,
+      ) =>
+        sum + status.count,
+      0,
+    );
+
+  /**
+   * Taskが1件も存在しない場合。
+   *
+   * 0除算を防ぎ、
+   * 空のDashboardでもグラフ領域を維持する。
+   */
+  if (total === 0) {
+    return "conic-gradient(#e2e8f0 0deg 360deg)";
+  }
+
+  let currentDegree = 0;
+
+  /**
+   * 各Statusの件数割合を
+   * 360度へ変換する。
+   */
+  const segments =
+    statuses.map(
+      (status) => {
+        const startDegree =
+          currentDegree;
+
+        const degree =
+          (
+            status.count /
+            total
+          ) * 360;
+
+        currentDegree +=
+          degree;
+
+        return [
+          status.chartColor,
+          `${startDegree}deg`,
+          `${currentDegree}deg`,
+        ].join(" ");
+      },
+    );
+
+  return `conic-gradient(${segments.join(", ")})`;
+}
+
+/**
  * SalesFlow AI Dashboard。
  *
  * Laravel Dashboard APIから、
- * Login Userが所有するCustomer / Projectの
+ * Login Userが所有する
+ * Customer / Project / Taskの
  * 集計情報を取得して表示する。
  *
  * データの流れ：
  *
  * PostgreSQL
+ *      ↓
+ * Customer / Project / Task
  *      ↓
  * Laravel
  * GET /api/v1/dashboard
@@ -368,11 +523,25 @@ export default async function DashboardPage() {
       authInit,
     );
 
+  /**
+   * Dashboard API Responseから、
+   *
+   * ・Summary
+   * ・Project Status
+   * ・Task Status
+   * ・最近のProject
+   * ・期限が近いProject
+   * ・期限が近いTask
+   *
+   * を取り出す。
+   */
   const {
     summary,
     projectStatusCounts,
+    taskStatusCounts,
     recentProjects,
     upcomingProjects,
+    upcomingTasks,
   } = dashboard;
 
   /**
@@ -488,22 +657,8 @@ export default async function DashboardPage() {
   ];
 
   /**
-   * Laravel Dashboard APIのStatus集計を、
+   * Laravel Dashboard APIのProject Status集計を、
    * Dashboard表示用データへ変換する。
-   *
-   * Projectで使用できるStatusは、
-   *
-   * draft
-   * proposal
-   * negotiation
-   * in_progress
-   * completed
-   * cancelled
-   *
-   * の6種類。
-   *
-   * Backend / Frontendで同じStatusを使用することで、
-   * APIとUIの定義に差が発生しないようにする。
    */
   const projectStatuses:
     ProjectStatusItem[] = [
@@ -617,12 +772,107 @@ export default async function DashboardPage() {
   ];
 
   /**
-   * Status件数から
+   * Laravel Dashboard APIのTask Status集計を、
+   * Dashboard表示用データへ変換する。
+   *
+   * Taskで使用するStatus：
+   *
+   * todo
+   * in_progress
+   * completed
+   * cancelled
+   */
+  const taskStatuses:
+    TaskStatusItem[] = [
+    {
+      key:
+        "todo",
+
+      label:
+        "未着手",
+
+      count:
+        taskStatusCounts
+          .todo,
+
+      colorClass:
+        "bg-slate-400",
+
+      chartColor:
+        "#94a3b8",
+    },
+
+    {
+      key:
+        "inProgress",
+
+      label:
+        "対応中",
+
+      count:
+        taskStatusCounts
+          .inProgress,
+
+      colorClass:
+        "bg-blue-500",
+
+      chartColor:
+        "#3b82f6",
+    },
+
+    {
+      key:
+        "completed",
+
+      label:
+        "完了",
+
+      count:
+        taskStatusCounts
+          .completed,
+
+      colorClass:
+        "bg-emerald-400",
+
+      chartColor:
+        "#34d399",
+    },
+
+    {
+      key:
+        "cancelled",
+
+      label:
+        "中止",
+
+      count:
+        taskStatusCounts
+          .cancelled,
+
+      colorClass:
+        "bg-rose-400",
+
+      chartColor:
+        "#fb7185",
+    },
+  ];
+
+  /**
+   * Project Status件数から
    * ドーナツグラフ背景を生成する。
    */
   const projectStatusGradient =
     createProjectStatusGradient(
       projectStatuses,
+    );
+
+  /**
+   * Task Status件数から
+   * ドーナツグラフ背景を生成する。
+   */
+  const taskStatusGradient =
+    createTaskStatusGradient(
+      taskStatuses,
     );
 
   return (
@@ -781,6 +1031,80 @@ export default async function DashboardPage() {
         </div>
 
         {/* ===========================================
+         * Taskステータス
+         * =========================================== */}
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold text-slate-900">
+              タスクステータス
+            </h2>
+
+            <Link
+              href="/tasks"
+              className="text-sm font-semibold text-blue-600 hover:text-blue-700"
+            >
+              タスク一覧
+            </Link>
+          </div>
+
+          <div className="mt-6 flex flex-col items-center gap-8 sm:flex-row">
+            {/* 実Task件数から生成したドーナツグラフ */}
+            <div
+              className="relative flex h-52 w-52 shrink-0 items-center justify-center rounded-full"
+              style={{
+                background:
+                  taskStatusGradient,
+              }}
+            >
+              {/* ドーナツ中央 */}
+              <div className="flex h-32 w-32 flex-col items-center justify-center rounded-full bg-white">
+                <span className="text-3xl font-bold text-slate-900">
+                  {
+                    summary
+                      .taskCount
+                  }
+                  件
+                </span>
+
+                <span className="text-sm text-slate-400">
+                  総計
+                </span>
+              </div>
+            </div>
+
+            {/* Task Status凡例 */}
+            <div className="w-full space-y-4">
+              {taskStatuses.map(
+                (status) => (
+                  <div
+                    key={status.key}
+                    className="flex items-center justify-between gap-6"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span
+                        className={`h-3 w-3 rounded ${status.colorClass}`}
+                      />
+
+                      <span className="text-sm text-slate-600">
+                        {
+                          status.label
+                        }
+                      </span>
+                    </div>
+
+                    <span className="text-sm font-bold text-slate-800">
+                      {
+                        status.count
+                      }
+                    </span>
+                  </div>
+                ),
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* ===========================================
          * 期限が近い案件
          * =========================================== */}
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -851,6 +1175,112 @@ export default async function DashboardPage() {
                       {getPriorityLabel(
                         project
                           .priority,
+                      )}
+                    </span>
+                  </div>
+                ),
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* ===========================================
+         * 期限が近いTask
+         * =========================================== */}
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold text-slate-900">
+              期限が近いタスク
+            </h2>
+
+            <Link
+              href="/tasks"
+              className="text-sm font-semibold text-blue-600 hover:text-blue-700"
+            >
+              すべて見る
+            </Link>
+          </div>
+
+          {upcomingTasks.length ===
+          0 ? (
+            <div className="mt-5 rounded-xl bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+              期限が近いタスクはありません。
+            </div>
+          ) : (
+            <div className="mt-5 divide-y divide-slate-100">
+              {upcomingTasks.map(
+                (task) => (
+                  <div
+                    key={task.id}
+                    className="flex items-center gap-4 py-4"
+                  >
+                    <div className="min-w-0 flex-1">
+                      {/* Task編集画面へのLink */}
+                      <Link
+                        href={`/tasks/${task.id}/edit`}
+                        className="block truncate text-sm font-semibold text-slate-700 hover:text-blue-600"
+                      >
+                        {
+                          task.title
+                        }
+                      </Link>
+
+                      <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-400">
+                        {/* Project詳細へのLink */}
+                        <Link
+                          href={`/projects/${task.projectId}`}
+                          className="truncate hover:text-blue-600"
+                        >
+                          {
+                            task.projectName
+                          }
+                        </Link>
+
+                        <span>
+                          /
+                        </span>
+
+                        {/* Customer名 */}
+                        <span className="truncate">
+                          {
+                            task.customerName
+                          }
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Task期限 */}
+                    <span className="hidden text-sm text-slate-400 sm:block">
+                      {formatDate(
+                        task.dueDate,
+                      )}
+                    </span>
+
+                    {/* Task Status */}
+                    <span
+                      className={[
+                        "hidden rounded-full px-2.5 py-1 text-xs font-semibold sm:inline-flex",
+                        getTaskStatusClass(
+                          task.status,
+                        ),
+                      ].join(" ")}
+                    >
+                      {getTaskStatusLabel(
+                        task.status,
+                      )}
+                    </span>
+
+                    {/* Task Priority */}
+                    <span
+                      className={[
+                        "rounded-full px-2.5 py-1 text-xs font-semibold",
+                        getPriorityClass(
+                          task.priority,
+                        ),
+                      ].join(" ")}
+                    >
+                      {getPriorityLabel(
+                        task.priority,
                       )}
                     </span>
                   </div>
@@ -945,9 +1375,11 @@ export default async function DashboardPage() {
         {/* ===========================================
          * 営業データ概要
          *
-         * Task / Meeting / Notification APIは
+         * Taskは実データ連携済み。
+         *
+         * Meeting / Notification APIは
          * まだ実装していないため、
-         * Mock表示は行わない。
+         * それらのMock表示は行わない。
          * =========================================== */}
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <h2 className="text-xl font-bold text-slate-900">
@@ -1000,6 +1432,36 @@ export default async function DashboardPage() {
               </span>
             </div>
 
+            {/* Task総数 */}
+            <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-4">
+              <span className="text-sm text-slate-600">
+                全タスク
+              </span>
+
+              <span className="font-bold text-slate-900">
+                {
+                  summary
+                    .taskCount
+                }
+                件
+              </span>
+            </div>
+
+            {/* 対応中Task */}
+            <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-4">
+              <span className="text-sm text-slate-600">
+                対応中タスク
+              </span>
+
+              <span className="font-bold text-slate-900">
+                {
+                  summary
+                    .inProgressTaskCount
+                }
+                件
+              </span>
+            </div>
+
             {/* Project総額 */}
             <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-4">
               <span className="text-sm text-slate-600">
@@ -1016,7 +1478,7 @@ export default async function DashboardPage() {
           </div>
 
           <p className="mt-5 text-xs leading-6 text-slate-400">
-            タスク・商談・通知機能は今後のAPI実装後にDashboardへ追加します。
+            商談・通知機能は今後のAPI実装後にDashboardへ追加します。
           </p>
         </div>
       </section>
