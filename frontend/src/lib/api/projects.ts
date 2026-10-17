@@ -15,6 +15,10 @@ import type {
   ProjectStatus,
 } from "@/types/project";
 
+import type {
+  Task,
+} from "@/types/task";
+
 /**
  * Laravel ProjectResourceが返すJSON。
  *
@@ -86,7 +90,9 @@ function buildProjectQuery(
   ) {
     params.set(
       "customerId",
-      String(query.customerId),
+      String(
+        query.customerId,
+      ),
     );
   }
 
@@ -120,7 +126,9 @@ function buildProjectQuery(
 
   params.set(
     "perPage",
-    String(query.perPage ?? 100),
+    String(
+      query.perPage ?? 100,
+    ),
   );
 
   if (
@@ -128,7 +136,9 @@ function buildProjectQuery(
   ) {
     params.set(
       "page",
-      String(query.page),
+      String(
+        query.page,
+      ),
     );
   }
 
@@ -137,7 +147,7 @@ function buildProjectQuery(
 
 /**
  * Laravel Project API Dataを、
- * 既存Project一覧UI用型へ変換する。
+ * Project一覧UI用型へ変換する。
  */
 export function mapProject(
   project: ProjectApiData,
@@ -178,20 +188,25 @@ export function mapProject(
 /**
  * Project一覧取得。
  *
+ * GET /api/v1/projects
+ *
  * init:
+ *
  * Next.js Server Componentから呼び出す場合に、
  * Laravel Session Cookie等のAuthentication情報を
  * apiRequest()へ渡すため使用する。
  *
  * Browser側から呼ぶ場合は、
- * initを省略してそのまま利用できる。
+ * initを省略して利用できる。
  */
 export async function getProjects(
   query: ProjectQuery = {},
   init: RequestInit = {},
 ): Promise<ProjectApiData[]> {
   const queryString =
-    buildProjectQuery(query);
+    buildProjectQuery(
+      query,
+    );
 
   const response =
     await apiRequest<
@@ -207,19 +222,22 @@ export async function getProjects(
 /**
  * Project詳細取得。
  *
+ * GET /api/v1/projects/{project}
+ *
  * init:
+ *
  * Next.js Server ComponentからLaravelへ
  * Session Cookieを転送するため使用する。
  *
- * これにより、
+ * データの流れ：
  *
  * Browser
  * ↓
  * Next.js Server Component
  * ↓
  * Laravel auth:sanctum
- *
- * の認証を維持したままProject詳細を取得できる。
+ * ↓
+ * ProjectController
  */
 export async function getProject(
   id: number,
@@ -240,11 +258,22 @@ export async function getProject(
  * Laravel APIのProjectを、
  * Project詳細画面用型へ変換する。
  *
- * Task / Activity / Milestoneは
- * まだAPI未実装のため空配列とする。
+ * Project本体：
+ *   Project APIから取得
+ *
+ * Task：
+ *   Task APIから取得
+ *
+ * Activity / Milestone：
+ *   まだAPI未実装のため空配列
+ *
+ * tasksへDefault値として空配列を設定することで、
+ * Task Dataを渡さない既存処理から呼び出した場合も
+ * 安全にProjectDetailを生成できる。
  */
 export function mapProjectDetail(
   project: ProjectApiData,
+  tasks: Task[] = [],
 ): ProjectDetail {
   return {
     ...mapProject(
@@ -263,10 +292,20 @@ export function mapProjectDetail(
     notes:
       project.notes,
 
-    tasks: [],
+    /**
+     * Laravel Task APIから取得した
+     * 対象Projectの関連Task。
+     */
+    tasks,
 
+    /**
+     * Activity APIは今後実装予定。
+     */
     activities: [],
 
+    /**
+     * Milestone APIは今後実装予定。
+     */
     milestones: [],
   };
 }
@@ -326,12 +365,14 @@ function createProjectPayload(
       ),
 
     description:
-      formData.description.trim() === ""
+      formData.description
+        .trim() === ""
         ? null
         : formData.description.trim(),
 
     notes:
-      formData.notes.trim() === ""
+      formData.notes
+        .trim() === ""
         ? null
         : formData.notes.trim(),
   };
@@ -371,7 +412,7 @@ export async function createProject(
 /**
  * Project更新。
  *
- * PATCH /api/v1/projects/{id}
+ * PATCH /api/v1/projects/{project}
  *
  * Browser側からのPATCH Requestについても、
  * apiRequest()がSession Cookieと

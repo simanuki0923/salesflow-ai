@@ -1,8 +1,12 @@
+import type {
+  Task,
+} from "@/types/task";
+
 /**
  * 案件ステータス。
  *
- * Laravel側でも将来的に同じ値を使用し、
- * フロントエンドとバックエンドで状態の表現を統一する予定。
+ * Laravel側のProject APIでも同じ値を使用し、
+ * FrontendとBackendで状態の表現を統一する。
  *
  * draft:
  *   下書き
@@ -34,7 +38,7 @@ export type ProjectStatus =
  * 案件の優先度。
  *
  * Union型を使用することで、
- * high / medium / low 以外の値が
+ * high / medium / low以外の値が
  * 入ることをTypeScript側で防止する。
  */
 export type ProjectPriority =
@@ -45,8 +49,8 @@ export type ProjectPriority =
 /**
  * 案件一覧画面で使用する案件データ。
  *
- * 将来的にはLaravel側のProjectResourceから返す
- * JSONレスポンスと同じ構造へ揃える予定。
+ * Laravel ProjectResourceから返される
+ * JSONをFrontend UI用へ変換して使用する。
  */
 export type Project = {
   /** 案件を一意に識別するID */
@@ -58,7 +62,7 @@ export type Project = {
   /**
    * 顧客ID。
    *
-   * Laravelではcustomers.idと紐付ける。
+   * Laravelではcustomers.idと紐付く。
    */
   customerId: number;
 
@@ -91,51 +95,6 @@ export type Project = {
    * 0〜100を想定する。
    */
   progress: number;
-};
-
-/**
- * 案件に紐づくタスクの状態。
- *
- * todo:
- *   未着手
- *
- * in_progress:
- *   対応中
- *
- * completed:
- *   完了
- */
-export type ProjectTaskStatus =
-  | "todo"
-  | "in_progress"
-  | "completed";
-
-/**
- * 案件詳細画面に表示するタスク。
- */
-export type ProjectTask = {
-  /** タスクID */
-  id: number;
-
-  /** タスク名 */
-  title: string;
-
-  /** 担当者 */
-  assignee: string;
-
-  /** 期限 */
-  dueDate: string;
-
-  /** タスク状態 */
-  status: ProjectTaskStatus;
-
-  /**
-   * 優先度。
-   *
-   * ProjectPriorityを再利用することで、
-   * 案件とタスクで優先度表現を統一する。
-   */
-  priority: ProjectPriority;
 };
 
 /**
@@ -207,10 +166,10 @@ export type ProjectMilestone = {
  * dueDate
  * progress
  *
- * をそのまま利用できる。
+ * をそのまま利用する。
  *
  * 「&」を利用して、
- * 詳細画面専用データを追加している。
+ * 詳細画面専用Dataを追加している。
  */
 export type ProjectDetail = Project & {
   /** 案件種別 */
@@ -230,8 +189,13 @@ export type ProjectDetail = Project & {
    */
   notes: string | null;
 
-  /** 関連タスク */
-  tasks: ProjectTask[];
+  /**
+   * 関連Task。
+   *
+   * 旧Mock用ProjectTask型ではなく、
+   * Task Domainで定義した正式なTask型を使用する。
+   */
+  tasks: Task[];
 
   /** 活動履歴 */
   activities: ProjectActivity[];
@@ -241,10 +205,12 @@ export type ProjectDetail = Project & {
 };
 
 /**
- * 案件登録・編集フォームで使用する入力値。
+ * 案件登録・編集Formで使用する入力値。
  *
- * HTMLのinput要素から取得する値は基本的にstringなので、
- * amountやprogressもフォームState上ではstringとして保持する。
+ * HTMLのinput要素から取得する値は
+ * 基本的にstringなので、
+ * amountやprogressもForm State上では
+ * stringとして保持する。
  *
  * Laravel APIへ送信するときに、
  *
@@ -252,7 +218,7 @@ export type ProjectDetail = Project & {
  * progress
  * customerId
  *
- * をnumberへ変換する予定。
+ * をnumberへ変換する。
  */
 export type ProjectFormData = {
   /** 案件名 */
@@ -262,7 +228,7 @@ export type ProjectFormData = {
    * 顧客ID。
    *
    * select要素のvalueはstringとして取得されるため、
-   * フォーム内ではstringとして保持する。
+   * Form内ではstringとして保持する。
    */
   customerId: string;
 
@@ -281,7 +247,8 @@ export type ProjectFormData = {
   /**
    * 案件金額。
    *
-   * HTML inputとの相性を考えてstringで保持する。
+   * HTML inputとの相性を考えて
+   * stringで保持する。
    */
   amount: string;
 
@@ -319,26 +286,33 @@ export type ProjectFormMode =
   | "edit";
 
 /**
- * ProjectFormのValidationエラー。
+ * ProjectFormのValidation Error。
  *
  * Partialを利用することで、
- * エラーが発生した項目だけ保持できる。
+ * Errorが発生した項目だけ保持できる。
  *
  * keyof ProjectFormDataにより、
  * ProjectFormDataに存在する項目名だけが
- * エラーのキーとして使用できる。
+ * ErrorのKeyとして使用できる。
  */
-export type ProjectFormErrors = Partial<
-  Record<keyof ProjectFormData, string>
->;
+export type ProjectFormErrors =
+  Partial<
+    Record<
+      keyof ProjectFormData,
+      string
+    >
+  >;
 
 /**
- * 顧客選択selectで使用する最小限の顧客情報。
+ * 顧客選択selectで使用する
+ * 最小限の顧客情報。
  *
- * 顧客一覧のCustomer型全体をProjectFormへ渡す必要はないため、
+ * 顧客一覧のCustomer型全体を
+ * ProjectFormへ渡す必要はないため、
  * idとnameだけを使用する。
  */
 export type ProjectCustomerOption = {
   id: number;
+
   name: string;
 };
