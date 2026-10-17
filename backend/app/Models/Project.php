@@ -91,4 +91,20 @@ class Project extends Model
     {
         return $this->hasMany(Task::class);
     }
+
+    /**
+     * このProjectに紐づくMeeting一覧。
+     *
+     * Project 1 : N Meeting
+     *
+     * projects.id
+     *      ↓
+     * meetings.project_id
+     */
+    public function meetings(): HasMany
+    {
+        return $this->hasMany(
+            Meeting::class,
+        );
+    }
 }
