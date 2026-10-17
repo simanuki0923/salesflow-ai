@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\V1\CustomerController;
 use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\ProjectController;
+use App\Http\Controllers\Api\V1\TaskController;
 use App\Http\Resources\Api\V1\UserResource;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -83,6 +84,14 @@ Route::prefix('v1')
                 Route::apiResource(
                     'projects',
                     ProjectController::class,
+                );
+
+                /**
+                 * Task REST API。
+                 */
+                Route::apiResource(
+                    'tasks',
+                    TaskController::class,
                 );
             });
     });
