@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Models\Meeting;
 use App\Models\Project;
 use App\Models\Task;
 use Illuminate\Database\Eloquent\Builder;
@@ -20,11 +21,15 @@ use Illuminate\Http\Request;
  * ・Project総額
  * ・Task数
  * ・対応中Task数
+ * ・Meeting数
+ * ・予定Meeting数
  * ・Project Status別件数
  * ・Task Status別件数
+ * ・Meeting Status別件数
  * ・最近のProject
  * ・期限が近いProject
  * ・期限が近いTask
+ * ・予定が近いMeeting
  *
  * をDashboard表示用にまとめて返す。
  *
@@ -105,6 +110,36 @@ class DashboardController extends Controller
             );
 
         /**
+         * Login Userが所有しているMeetingだけを対象にする
+         * Base Query。
+         *
+         * Meeting自身にはuser_idを持たないため、
+         *
+         * User
+         *   ↓
+         * Customer
+         *   ↓
+         * Project
+         *   ↓
+         * Meeting
+         *
+         * のRelationを使用してOwnershipを判定する。
+         *
+         * Meeting REST APIと同じOwnershipルールを
+         * Dashboardでも使用する。
+         */
+        $meetingQuery = Meeting::query()
+            ->whereHas(
+                'project.customer',
+                function (Builder $query) use ($user): void {
+                    $query->where(
+                        'user_id',
+                        $user->id,
+                    );
+                },
+            );
+
+        /**
          * Customer総数。
          *
          * User Modelのcustomers Relationを利用するため、
@@ -154,6 +189,26 @@ class DashboardController extends Controller
                 ->where(
                     'status',
                     'in_progress',
+                )
+                ->count();
+
+        /**
+         * Meeting総数。
+         */
+        $meetingCount =
+            (clone $meetingQuery)->count();
+
+        /**
+         * 現在予定状態のMeeting数。
+         *
+         * 日時が過去でもstatusがscheduledなら、
+         * Status集計上は予定Meetingとして数える。
+         */
+        $scheduledMeetingCount =
+            (clone $meetingQuery)
+                ->where(
+                    'status',
+                    'scheduled',
                 )
                 ->count();
 
@@ -268,6 +323,49 @@ class DashboardController extends Controller
 
             'cancelled' => (int) (
                 $taskStatusCountData['cancelled']
+                ?? 0
+            ),
+        ];
+
+        /**
+         * StatusごとのMeeting件数を取得する。
+         *
+         * Meeting Domainで使用するStatus：
+         *
+         * scheduled
+         * completed
+         * cancelled
+         */
+        $meetingStatusCountData =
+            (clone $meetingQuery)
+                ->selectRaw(
+                    'status, COUNT(*) AS aggregate',
+                )
+                ->groupBy('status')
+                ->pluck(
+                    'aggregate',
+                    'status',
+                );
+
+        /**
+         * Meeting Status別件数。
+         *
+         * DBに存在しないStatusも0件として返し、
+         * Frontendで常に同じJSON構造を扱えるようにする。
+         */
+        $meetingStatusCounts = [
+            'scheduled' => (int) (
+                $meetingStatusCountData['scheduled']
+                ?? 0
+            ),
+
+            'completed' => (int) (
+                $meetingStatusCountData['completed']
+                ?? 0
+            ),
+
+            'cancelled' => (int) (
+                $meetingStatusCountData['cancelled']
                 ?? 0
             ),
         ];
@@ -427,6 +525,68 @@ class DashboardController extends Controller
                 ->values();
 
         /**
+         * 予定日時が近いMeeting。
+         *
+         * ・scheduledだけ対象
+         * ・現在時刻以降だけ対象
+         * ・予定日時が近い順
+         * ・最大5件
+         *
+         * DashboardからMeeting編集画面や
+         * Project詳細へ遷移できるよう、
+         * Project / Customer情報も取得する。
+         */
+        $upcomingMeetings =
+            (clone $meetingQuery)
+                ->with([
+                    'project:id,customer_id,name',
+                    'project.customer:id,name',
+                ])
+                ->where(
+                    'status',
+                    'scheduled',
+                )
+                ->where(
+                    'scheduled_at',
+                    '>=',
+                    now(),
+                )
+                ->orderBy(
+                    'scheduled_at',
+                )
+                ->limit(5)
+                ->get()
+                ->map(
+                    function (Meeting $meeting): array {
+                        return [
+                            'id' => $meeting->id,
+
+                            'projectId' => $meeting->project->id,
+
+                            'projectName' => $meeting->project->name,
+
+                            'customerName' => $meeting->project
+                                ->customer
+                                ->name,
+
+                            'title' => $meeting->title,
+
+                            'status' => $meeting->status,
+
+                            'method' => $meeting->method,
+
+                            'scheduledAt' => $meeting->scheduled_at
+                                ?->toISOString(),
+
+                            'durationMinutes' => $meeting->duration_minutes,
+
+                            'location' => $meeting->location,
+                        ];
+                    },
+                )
+                ->values();
+
+        /**
          * Dashboard専用Response。
          *
          * Frontend側では、
@@ -434,9 +594,11 @@ class DashboardController extends Controller
          * response.data.summary
          * response.data.projectStatusCounts
          * response.data.taskStatusCounts
+         * response.data.meetingStatusCounts
          * response.data.recentProjects
          * response.data.upcomingProjects
          * response.data.upcomingTasks
+         * response.data.upcomingMeetings
          *
          * として利用する。
          */
@@ -454,17 +616,25 @@ class DashboardController extends Controller
                     'taskCount' => $taskCount,
 
                     'inProgressTaskCount' => $inProgressTaskCount,
+
+                    'meetingCount' => $meetingCount,
+
+                    'scheduledMeetingCount' => $scheduledMeetingCount,
                 ],
 
                 'projectStatusCounts' => $projectStatusCounts,
 
                 'taskStatusCounts' => $taskStatusCounts,
 
+                'meetingStatusCounts' => $meetingStatusCounts,
+
                 'recentProjects' => $recentProjects,
 
                 'upcomingProjects' => $upcomingProjects,
 
                 'upcomingTasks' => $upcomingTasks,
+
+                'upcomingMeetings' => $upcomingMeetings,
             ],
         ]);
     }
