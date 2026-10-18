@@ -3,6 +3,7 @@
 namespace Tests\Feature\Api\V1;
 
 use App\Models\Customer;
+use App\Models\Meeting;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\User;
@@ -158,6 +159,59 @@ class DashboardApiTest extends TestCase
                     'due_date' => today()
                         ->addDays(7)
                         ->format('Y-m-d'),
+
+                    'completed_at' => null,
+                ],
+                $overrides,
+            ),
+        );
+    }
+
+    /**
+     * Test用Meetingを作成する。
+     *
+     * Meeting自身にはuser_idを保持していないため、
+     *
+     * Meeting
+     *   ↓
+     * Project
+     *   ↓
+     * Customer
+     *   ↓
+     * User
+     *
+     * のRelationによって所有Userを判定する。
+     *
+     * @param  array<string, mixed>  $overrides
+     */
+    private function createMeeting(
+        Project $project,
+        array $overrides = [],
+    ): Meeting {
+        return Meeting::create(
+            array_merge(
+                [
+                    'project_id' => $project->id,
+
+                    'title' => 'Dashboard Test Meeting',
+
+                    'description' => 'Dashboard API Test',
+
+                    'status' => 'scheduled',
+
+                    'method' => 'online',
+
+                    'scheduled_at' => now()
+                        ->addDays(7)
+                        ->startOfMinute(),
+
+                    'duration_minutes' => 60,
+
+                    'location' => 'Google Meet',
+
+                    'result' => null,
+
+                    'next_action' => '資料送付',
 
                     'completed_at' => null,
                 ],
@@ -874,6 +928,291 @@ class DashboardApiTest extends TestCase
              */
             ->assertJsonMissing([
                 'title' => '他ユーザーTask',
+            ]);
+    }
+
+    /**
+     * MeetingのDashboard集計と
+     * 「予定が近いMeeting」を取得できる。
+     *
+     * Status集計にはLogin User所有Meetingをすべて含める。
+     *
+     * upcomingMeetingsには、
+     *
+     * ・scheduled
+     * ・現在時刻以降
+     *
+     * のMeetingだけを予定日時が近い順で返す。
+     */
+    public function test_can_get_meeting_summary_and_upcoming_meetings(): void
+    {
+        $user =
+            User::factory()->create();
+
+        $customer =
+            $this->createCustomer(
+                $user,
+                [
+                    'email' => 'meeting-dashboard@example.com',
+                ],
+            );
+
+        $project =
+            $this->createProject(
+                $customer,
+                [
+                    'name' => 'Dashboard Meeting案件',
+                ],
+            );
+
+        $nearestScheduledAt =
+            now()
+                ->addHour()
+                ->startOfMinute();
+
+        $laterScheduledAt =
+            now()
+                ->addHours(3)
+                ->startOfMinute();
+
+        /**
+         * upcomingMeetingsの先頭になるMeeting。
+         */
+        $nearestMeeting =
+            $this->createMeeting(
+                $project,
+                [
+                    'title' => '直近商談',
+
+                    'method' => 'online',
+
+                    'scheduled_at' => $nearestScheduledAt,
+
+                    'duration_minutes' => 45,
+
+                    'location' => 'Google Meet',
+                ],
+            );
+
+        /**
+         * 2番目の予定Meeting。
+         */
+        $laterMeeting =
+            $this->createMeeting(
+                $project,
+                [
+                    'title' => '次回商談',
+
+                    'method' => 'in_person',
+
+                    'scheduled_at' => $laterScheduledAt,
+
+                    'location' => '東京本社',
+                ],
+            );
+
+        /**
+         * 過去日時のscheduled Meeting。
+         *
+         * Status集計には含むが、
+         * upcomingMeetingsには含めない。
+         */
+        $this->createMeeting(
+            $project,
+            [
+                'title' => '過去予定商談',
+
+                'status' => 'scheduled',
+
+                'scheduled_at' => now()
+                    ->subHour()
+                    ->startOfMinute(),
+            ],
+        );
+
+        /**
+         * 完了Meeting。
+         */
+        $this->createMeeting(
+            $project,
+            [
+                'title' => '完了商談',
+
+                'status' => 'completed',
+
+                'scheduled_at' => now()
+                    ->addHours(2)
+                    ->startOfMinute(),
+
+                'completed_at' => now(),
+            ],
+        );
+
+        /**
+         * 中止Meeting。
+         */
+        $this->createMeeting(
+            $project,
+            [
+                'title' => '中止商談',
+
+                'status' => 'cancelled',
+
+                'scheduled_at' => now()
+                    ->addHours(4)
+                    ->startOfMinute(),
+            ],
+        );
+
+        /**
+         * 別User所有Meeting。
+         *
+         * Summary / Status / upcomingMeetingsの
+         * すべてから除外される必要がある。
+         */
+        $otherUser =
+            User::factory()->create();
+
+        $otherCustomer =
+            $this->createCustomer(
+                $otherUser,
+                [
+                    'email' => 'other-meeting-dashboard@example.com',
+                ],
+            );
+
+        $otherProject =
+            $this->createProject(
+                $otherCustomer,
+                [
+                    'name' => '他User案件',
+                ],
+            );
+
+        $this->createMeeting(
+            $otherProject,
+            [
+                'title' => '他User商談',
+
+                'scheduled_at' => now()
+                    ->addMinutes(30)
+                    ->startOfMinute(),
+            ],
+        );
+
+        $response =
+            $this
+                ->actingAs($user)
+                ->getJson(
+                    '/api/v1/dashboard',
+                );
+
+        $response
+            ->assertOk()
+
+            /**
+             * 自User所有Meetingは5件。
+             */
+            ->assertJsonPath(
+                'data.summary.meetingCount',
+                5,
+            )
+
+            /**
+             * scheduledは、
+             *
+             * ・直近商談
+             * ・次回商談
+             * ・過去予定商談
+             *
+             * の3件。
+             */
+            ->assertJsonPath(
+                'data.summary.scheduledMeetingCount',
+                3,
+            )
+
+            ->assertJsonPath(
+                'data.meetingStatusCounts.scheduled',
+                3,
+            )
+
+            ->assertJsonPath(
+                'data.meetingStatusCounts.completed',
+                1,
+            )
+
+            ->assertJsonPath(
+                'data.meetingStatusCounts.cancelled',
+                1,
+            )
+
+            /**
+             * upcomingMeetingsは未来scheduledだけ。
+             */
+            ->assertJsonCount(
+                2,
+                'data.upcomingMeetings',
+            )
+
+            /**
+             * 日時が近い順。
+             */
+            ->assertJsonPath(
+                'data.upcomingMeetings.0.id',
+                $nearestMeeting->id,
+            )
+
+            ->assertJsonPath(
+                'data.upcomingMeetings.0.title',
+                '直近商談',
+            )
+
+            ->assertJsonPath(
+                'data.upcomingMeetings.0.projectId',
+                $project->id,
+            )
+
+            ->assertJsonPath(
+                'data.upcomingMeetings.0.projectName',
+                'Dashboard Meeting案件',
+            )
+
+            ->assertJsonPath(
+                'data.upcomingMeetings.0.customerName',
+                '株式会社テスト',
+            )
+
+            ->assertJsonPath(
+                'data.upcomingMeetings.0.status',
+                'scheduled',
+            )
+
+            ->assertJsonPath(
+                'data.upcomingMeetings.0.method',
+                'online',
+            )
+
+            ->assertJsonPath(
+                'data.upcomingMeetings.0.durationMinutes',
+                45,
+            )
+
+            ->assertJsonPath(
+                'data.upcomingMeetings.0.location',
+                'Google Meet',
+            )
+
+            ->assertJsonPath(
+                'data.upcomingMeetings.1.id',
+                $laterMeeting->id,
+            )
+
+            /**
+             * 他User Meetingが含まれていないことを確認する。
+             */
+            ->assertJsonMissing([
+                'title' => '他User商談',
             ]);
     }
 }
