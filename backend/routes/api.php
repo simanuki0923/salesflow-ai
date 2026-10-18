@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\V1\CustomerController;
 use App\Http\Controllers\Api\V1\DashboardController;
+use App\Http\Controllers\Api\V1\MeetingAiSuggestionController;
 use App\Http\Controllers\Api\V1\MeetingController;
 use App\Http\Controllers\Api\V1\ProjectController;
 use App\Http\Controllers\Api\V1\TaskController;
@@ -93,6 +94,19 @@ Route::prefix('v1')
                 Route::apiResource(
                     'tasks',
                     TaskController::class,
+                );
+
+                /**
+                 * Meeting AI営業支援API。
+                 *
+                 * AIは提案だけを返し、
+                 * Meeting自体は保存・更新しない。
+                 */
+                Route::post(
+                    '/meeting-ai/suggest',
+                    MeetingAiSuggestionController::class,
+                )->name(
+                    'meeting-ai.suggest',
                 );
 
                 /**

@@ -35,4 +35,34 @@ return [
         ],
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | OpenAI
+    |--------------------------------------------------------------------------
+    |
+    | SalesFlow AIのAI支援機能で使用するOpenAI API設定。
+    |
+    | API KeyはFrontendへ公開せず、
+    | Laravel BackendからのみOpenAI APIへRequestする。
+    |
+    | Model名もEnvironment Variable化することで、
+    | 将来Modelを変更するときにApplication Codeを
+    | 修正しなくて済むようにする。
+    |
+    */
+
+    'openai' => [
+        'api_key' => env('OPENAI_API_KEY'),
+
+        'model' => env(
+            'OPENAI_MODEL',
+            'gpt-6-luna',
+        ),
+
+        'base_url' => env(
+            'OPENAI_BASE_URL',
+            'https://api.openai.com/v1',
+        ),
+    ],
+
 ];
