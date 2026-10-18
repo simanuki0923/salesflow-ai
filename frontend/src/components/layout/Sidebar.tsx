@@ -51,7 +51,7 @@ const menuItems = [
     icon: SquareCheckBig,
   },
   {
-    label: "商談メモ",
+    label: "商談管理",
     href: "/meetings",
     icon: FileText,
   },
