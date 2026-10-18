@@ -56,6 +56,22 @@ export type MeetingApiData = {
 };
 
 /**
+ * Meeting AI提案APIが返すData。
+ *
+ * AIはDBへ直接保存せず、
+ *
+ * result
+ * nextAction
+ *
+ * の提案だけをFrontendへ返す。
+ */
+export type MeetingAiSuggestion = {
+  result: string;
+
+  nextAction: string;
+};
+
+/**
  * Meeting一覧APIの検索条件。
  *
  * Laravel側のIndexMeetingRequestと
@@ -420,6 +436,72 @@ export async function updateMeeting(
             formData,
           ),
         ),
+      },
+    );
+
+  return response.data;
+}
+
+/**
+ * Meeting内容からAI提案を生成する。
+ *
+ * POST /api/v1/meeting-ai/suggest
+ *
+ * データの流れ：
+ *
+ * MeetingForm
+ * ↓
+ * suggestMeeting()
+ * ↓
+ * Laravel Meeting AI API
+ * ↓
+ * OpenAI Responses API
+ * ↓
+ * result / nextAction
+ * ↓
+ * MeetingFormへ反映
+ *
+ * この処理だけではMeetingをDBへ保存しない。
+ * UserがAI提案を確認・修正したあと、
+ * 通常のMeeting保存APIを利用する。
+ */
+export async function suggestMeeting(
+  formData: MeetingFormData,
+): Promise<MeetingAiSuggestion> {
+  const response =
+    await apiRequest<
+      ApiResourceResponse<MeetingAiSuggestion>
+    >(
+      "/meeting-ai/suggest",
+      {
+        method: "POST",
+
+        body: JSON.stringify({
+          /**
+           * AI提案には商談名と商談内容を渡す。
+           */
+          title:
+            formData.title.trim(),
+
+          description:
+            formData.description.trim(),
+
+          /**
+           * すでにUserが入力している場合は、
+           * 現在の内容もAI改善提案のContextとして渡す。
+           */
+          result:
+            formData.result
+              .trim() === ""
+              ? null
+              : formData.result.trim(),
+
+          nextAction:
+            formData.nextAction
+              .trim() === ""
+              ? null
+              : formData.nextAction.trim(),
+        }),
       },
     );
 
