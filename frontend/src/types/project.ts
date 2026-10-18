@@ -1,4 +1,8 @@
 import type {
+  Meeting,
+} from "@/types/meeting";
+
+import type {
   Task,
 } from "@/types/task";
 
@@ -196,6 +200,14 @@ export type ProjectDetail = Project & {
    * Task Domainで定義した正式なTask型を使用する。
    */
   tasks: Task[];
+
+  /**
+   * 関連Meeting。
+   *
+   * Meeting APIから取得した、
+   * 対象Projectに所属する正式なMeeting Data。
+   */
+  meetings: Meeting[];
 
   /** 活動履歴 */
   activities: ProjectActivity[];

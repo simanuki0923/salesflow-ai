@@ -16,6 +16,10 @@ import type {
 } from "@/types/project";
 
 import type {
+  Meeting,
+} from "@/types/meeting";
+
+import type {
   Task,
 } from "@/types/task";
 
@@ -264,16 +268,21 @@ export async function getProject(
  * Task：
  *   Task APIから取得
  *
+ * Meeting：
+ *   Meeting APIから取得
+ *
  * Activity / Milestone：
  *   まだAPI未実装のため空配列
  *
- * tasksへDefault値として空配列を設定することで、
- * Task Dataを渡さない既存処理から呼び出した場合も
+ * tasks / meetingsへDefault値として
+ * 空配列を設定することで、
+ * 関連Dataを渡さない既存処理から呼び出した場合も
  * 安全にProjectDetailを生成できる。
  */
 export function mapProjectDetail(
   project: ProjectApiData,
   tasks: Task[] = [],
+  meetings: Meeting[] = [],
 ): ProjectDetail {
   return {
     ...mapProject(
@@ -297,6 +306,12 @@ export function mapProjectDetail(
      * 対象Projectの関連Task。
      */
     tasks,
+
+    /**
+     * Laravel Meeting APIから取得した
+     * 対象Projectの関連Meeting。
+     */
+    meetings,
 
     /**
      * Activity APIは今後実装予定。

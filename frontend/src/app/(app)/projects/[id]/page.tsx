@@ -9,12 +9,20 @@ import ProjectDetailHeader
 import ProjectOverview
   from "@/components/projects/ProjectOverview";
 
+import ProjectMeetings
+  from "@/components/projects/ProjectMeetings";
+
 import ProjectTasks
   from "@/components/projects/ProjectTasks";
 
 import {
   ApiError,
 } from "@/lib/api/client";
+
+import {
+  getMeetings,
+  mapMeeting,
+} from "@/lib/api/meetings";
 
 import {
   getProject,
@@ -43,7 +51,7 @@ type ProjectDetailPageProps = {
  * Project詳細Page。
  *
  * Project本体と、
- * Projectに所属するTaskを
+ * Projectに所属するTask / Meetingを
  * Laravel REST APIから取得する。
  *
  * データの流れ：
@@ -56,11 +64,11 @@ type ProjectDetailPageProps = {
  * ↓
  * Project存在・所有権確認
  * ↓
- * Task API
+ * Task API / Meeting API
  * ↓
  * ProjectDetail
  * ↓
- * ProjectTasks
+ * ProjectTasks / ProjectMeetings
  */
 export default async function ProjectDetailPage({
   params,
@@ -134,25 +142,49 @@ export default async function ProjectDetailPage({
 
   /**
    * Projectの存在と所有権が確認できた後で、
-   * このProjectに所属するTaskを取得する。
+   * このProjectに所属するTask / Meetingを取得する。
+   *
+   * Task:
    *
    * GET /api/v1/tasks
    *     ?projectId={projectId}
    *     &perPage=100
    *
-   * Laravel側でもUser Scopeが適用される。
+   * Meeting:
+   *
+   * GET /api/v1/meetings
+   *     ?projectId={projectId}
+   *     &perPage=100
+   *
+   * TaskとMeetingは相互依存しないため、
+   * Promise.all()で並列取得する。
+   *
+   * Laravel側でも両APIに
+   * Login User Scopeが適用される。
    */
-  const apiTasks =
-    await getTasks(
+  const [
+    apiTasks,
+    apiMeetings,
+  ] = await Promise.all([
+    getTasks(
       {
         projectId,
         perPage: 100,
       },
       authInit,
-    );
+    ),
+
+    getMeetings(
+      {
+        projectId,
+        perPage: 100,
+      },
+      authInit,
+    ),
+  ]);
 
   /**
-   * Laravel TaskResource Dataを、
+   * Laravel TaskResource Dataを
    * Frontend UI用Taskへ変換する。
    */
   const tasks =
@@ -161,14 +193,23 @@ export default async function ProjectDetailPage({
     );
 
   /**
-   * Project本体と関連Taskを
+   * Laravel MeetingResource Dataを
+   * Frontend UI用Meetingへ変換する。
+   */
+  const meetings =
+    apiMeetings.map(
+      mapMeeting,
+    );
+
+  /**
+   * Project本体と関連Task / Meetingを
    * ProjectDetailへまとめる。
-   *
-   * mapProjectDetail:
    *
    * ProjectApiData
    * +
    * Task[]
+   * +
+   * Meeting[]
    *
    * ↓
    *
@@ -178,6 +219,7 @@ export default async function ProjectDetailPage({
     mapProjectDetail(
       apiProject,
       tasks,
+      meetings,
     );
 
   return (
@@ -211,17 +253,27 @@ export default async function ProjectDetailPage({
         />
 
         {/*
-         * ActivityはまだAPI未実装。
-         *
-         * 現段階ではmapProjectDetail()から
-         * 空配列が渡される。
+         * Laravel Meeting APIから取得した
+         * 実Meeting Data。
          */}
-        <ProjectActivity
-          activities={
-            project.activities
+        <ProjectMeetings
+          meetings={
+            project.meetings
           }
         />
       </div>
+
+      {/*
+       * ActivityはまだAPI未実装。
+       *
+       * 現段階ではmapProjectDetail()から
+       * 空配列が渡される。
+       */}
+      <ProjectActivity
+        activities={
+          project.activities
+        }
+      />
 
       {/* ================================================
        * Project Memo
