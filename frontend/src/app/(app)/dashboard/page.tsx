@@ -16,6 +16,7 @@ import {
 } from "@/lib/api/dashboard";
 
 import type {
+  DashboardMeetingStatusCounts,
   DashboardProjectStatusCounts,
   DashboardTaskStatusCounts,
 } from "@/lib/api/dashboard";
@@ -23,6 +24,11 @@ import type {
 import {
   getServerAuthRequestInit,
 } from "@/lib/api/server-auth";
+
+import type {
+  MeetingMethod,
+  MeetingStatus,
+} from "@/types/meeting";
 
 import type {
   ProjectPriority,
@@ -132,6 +138,38 @@ type TaskStatusItem = {
 
   /**
    * 該当StatusのTask件数。
+   */
+  count: number;
+
+  /**
+   * 凡例で使用するTailwind CSS。
+   */
+  colorClass: string;
+
+  /**
+   * ドーナツグラフで使用する色。
+   */
+  chartColor: string;
+};
+
+/**
+ * DashboardのMeetingステータス表示用。
+ */
+type MeetingStatusItem = {
+  /**
+   * Laravel Dashboard APIの
+   * meetingStatusCountsと対応するKey。
+   */
+  key:
+    keyof DashboardMeetingStatusCounts;
+
+  /**
+   * 日本語表示名。
+   */
+  label: string;
+
+  /**
+   * 該当StatusのMeeting件数。
    */
   count: number;
 
@@ -350,6 +388,115 @@ function getTaskStatusClass(
 }
 
 /**
+ * Meeting Statusを日本語表示へ変換する。
+ */
+function getMeetingStatusLabel(
+  status: MeetingStatus,
+): string {
+  switch (status) {
+    case "scheduled":
+      return "予定";
+
+    case "completed":
+      return "完了";
+
+    case "cancelled":
+      return "中止";
+  }
+}
+
+/**
+ * Meeting Statusごとの表示Class。
+ */
+function getMeetingStatusClass(
+  status: MeetingStatus,
+): string {
+  switch (status) {
+    case "scheduled":
+      return "bg-blue-50 text-blue-600";
+
+    case "completed":
+      return "bg-emerald-50 text-emerald-600";
+
+    case "cancelled":
+      return "bg-rose-50 text-rose-600";
+  }
+}
+
+/**
+ * Meeting Methodを日本語表示へ変換する。
+ */
+function getMeetingMethodLabel(
+  method: MeetingMethod,
+): string {
+  switch (method) {
+    case "in_person":
+      return "対面";
+
+    case "online":
+      return "オンライン";
+
+    case "phone":
+      return "電話";
+  }
+}
+
+/**
+ * Meeting Methodごとの表示Class。
+ */
+function getMeetingMethodClass(
+  method: MeetingMethod,
+): string {
+  switch (method) {
+    case "in_person":
+      return "bg-violet-50 text-violet-600";
+
+    case "online":
+      return "bg-sky-50 text-sky-600";
+
+    case "phone":
+      return "bg-amber-50 text-amber-600";
+  }
+}
+
+/**
+ * Meeting予定日時をDashboard表示用へ変換する。
+ *
+ * Meeting画面と同じく、
+ * JavaScript DateによるTime Zone変換は行わず、
+ * APIから取得した日時文字列を表示用に整形する。
+ */
+function formatMeetingScheduledAt(
+  value: string,
+): string {
+  const normalized =
+    value.replace(
+      " ",
+      "T",
+    );
+
+  const [
+    datePart,
+    timePart = "",
+  ] = normalized.split(
+    "T",
+  );
+
+  return [
+    datePart.replaceAll(
+      "-",
+      "/",
+    ),
+    timePart.slice(
+      0,
+      5,
+    ),
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+/**
  * Project Statusの件数から
  * CSSのconic-gradientを生成する。
  *
@@ -478,18 +625,73 @@ function createTaskStatusGradient(
 }
 
 /**
+ * Meeting Statusの件数から
+ * CSSのconic-gradientを生成する。
+ */
+function createMeetingStatusGradient(
+  statuses: MeetingStatusItem[],
+): string {
+  /**
+   * 全Meeting Status件数を合計する。
+   */
+  const total =
+    statuses.reduce(
+      (
+        sum,
+        status,
+      ) =>
+        sum + status.count,
+      0,
+    );
+
+  /**
+   * Meetingが1件も存在しない場合。
+   */
+  if (total === 0) {
+    return "conic-gradient(#e2e8f0 0deg 360deg)";
+  }
+
+  let currentDegree = 0;
+
+  const segments =
+    statuses.map(
+      (status) => {
+        const startDegree =
+          currentDegree;
+
+        const degree =
+          (
+            status.count /
+            total
+          ) * 360;
+
+        currentDegree +=
+          degree;
+
+        return [
+          status.chartColor,
+          `${startDegree}deg`,
+          `${currentDegree}deg`,
+        ].join(" ");
+      },
+    );
+
+  return `conic-gradient(${segments.join(", ")})`;
+}
+
+/**
  * SalesFlow AI Dashboard。
  *
  * Laravel Dashboard APIから、
  * Login Userが所有する
- * Customer / Project / Taskの
+ * Customer / Project / Task / Meetingの
  * 集計情報を取得して表示する。
  *
  * データの流れ：
  *
  * PostgreSQL
  *      ↓
- * Customer / Project / Task
+ * Customer / Project / Task / Meeting
  *      ↓
  * Laravel
  * GET /api/v1/dashboard
@@ -529,9 +731,11 @@ export default async function DashboardPage() {
    * ・Summary
    * ・Project Status
    * ・Task Status
+   * ・Meeting Status
    * ・最近のProject
    * ・期限が近いProject
    * ・期限が近いTask
+   * ・予定が近いMeeting
    *
    * を取り出す。
    */
@@ -539,9 +743,11 @@ export default async function DashboardPage() {
     summary,
     projectStatusCounts,
     taskStatusCounts,
+    meetingStatusCounts,
     recentProjects,
     upcomingProjects,
     upcomingTasks,
+    upcomingMeetings,
   } = dashboard;
 
   /**
@@ -858,6 +1064,73 @@ export default async function DashboardPage() {
   ];
 
   /**
+   * Laravel Dashboard APIのMeeting Status集計を、
+   * Dashboard表示用データへ変換する。
+   *
+   * Meetingで使用するStatus：
+   *
+   * scheduled
+   * completed
+   * cancelled
+   */
+  const meetingStatuses:
+    MeetingStatusItem[] = [
+    {
+      key:
+        "scheduled",
+
+      label:
+        "予定",
+
+      count:
+        meetingStatusCounts
+          .scheduled,
+
+      colorClass:
+        "bg-violet-500",
+
+      chartColor:
+        "#8b5cf6",
+    },
+
+    {
+      key:
+        "completed",
+
+      label:
+        "完了",
+
+      count:
+        meetingStatusCounts
+          .completed,
+
+      colorClass:
+        "bg-emerald-400",
+
+      chartColor:
+        "#34d399",
+    },
+
+    {
+      key:
+        "cancelled",
+
+      label:
+        "中止",
+
+      count:
+        meetingStatusCounts
+          .cancelled,
+
+      colorClass:
+        "bg-rose-400",
+
+      chartColor:
+        "#fb7185",
+    },
+  ];
+
+  /**
    * Project Status件数から
    * ドーナツグラフ背景を生成する。
    */
@@ -873,6 +1146,15 @@ export default async function DashboardPage() {
   const taskStatusGradient =
     createTaskStatusGradient(
       taskStatuses,
+    );
+
+  /**
+   * Meeting Status件数から
+   * ドーナツグラフ背景を生成する。
+   */
+  const meetingStatusGradient =
+    createMeetingStatusGradient(
+      meetingStatuses,
     );
 
   return (
@@ -1105,6 +1387,80 @@ export default async function DashboardPage() {
         </div>
 
         {/* ===========================================
+         * Meetingステータス
+         * =========================================== */}
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold text-slate-900">
+              商談ステータス
+            </h2>
+
+            <Link
+              href="/meetings"
+              className="text-sm font-semibold text-blue-600 hover:text-blue-700"
+            >
+              商談一覧
+            </Link>
+          </div>
+
+          <div className="mt-6 flex flex-col items-center gap-8 sm:flex-row">
+            {/* 実Meeting件数から生成したドーナツグラフ */}
+            <div
+              className="relative flex h-52 w-52 shrink-0 items-center justify-center rounded-full"
+              style={{
+                background:
+                  meetingStatusGradient,
+              }}
+            >
+              {/* ドーナツ中央 */}
+              <div className="flex h-32 w-32 flex-col items-center justify-center rounded-full bg-white">
+                <span className="text-3xl font-bold text-slate-900">
+                  {
+                    summary
+                      .meetingCount
+                  }
+                  件
+                </span>
+
+                <span className="text-sm text-slate-400">
+                  総計
+                </span>
+              </div>
+            </div>
+
+            {/* Meeting Status凡例 */}
+            <div className="w-full space-y-4">
+              {meetingStatuses.map(
+                (status) => (
+                  <div
+                    key={status.key}
+                    className="flex items-center justify-between gap-6"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span
+                        className={`h-3 w-3 rounded ${status.colorClass}`}
+                      />
+
+                      <span className="text-sm text-slate-600">
+                        {
+                          status.label
+                        }
+                      </span>
+                    </div>
+
+                    <span className="text-sm font-bold text-slate-800">
+                      {
+                        status.count
+                      }
+                    </span>
+                  </div>
+                ),
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* ===========================================
          * 期限が近い案件
          * =========================================== */}
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -1291,6 +1647,135 @@ export default async function DashboardPage() {
         </div>
 
         {/* ===========================================
+         * 予定が近いMeeting
+         * =========================================== */}
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold text-slate-900">
+              予定が近い商談
+            </h2>
+
+            <Link
+              href="/meetings"
+              className="text-sm font-semibold text-blue-600 hover:text-blue-700"
+            >
+              すべて見る
+            </Link>
+          </div>
+
+          {upcomingMeetings.length ===
+          0 ? (
+            <div className="mt-5 rounded-xl bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+              今後の商談予定はありません。
+            </div>
+          ) : (
+            <div className="mt-5 divide-y divide-slate-100">
+              {upcomingMeetings.map(
+                (meeting) => (
+                  <div
+                    key={meeting.id}
+                    className="flex flex-col gap-3 py-4 sm:flex-row sm:items-start sm:justify-between"
+                  >
+                    <div className="min-w-0 flex-1">
+                      {/* Meeting編集画面へのLink */}
+                      <Link
+                        href={`/meetings/${meeting.id}/edit`}
+                        className="block truncate text-sm font-semibold text-slate-700 hover:text-blue-600"
+                      >
+                        {
+                          meeting.title
+                        }
+                      </Link>
+
+                      <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-400">
+                        {/* Project詳細へのLink */}
+                        <Link
+                          href={`/projects/${meeting.projectId}`}
+                          className="truncate hover:text-blue-600"
+                        >
+                          {
+                            meeting.projectName
+                          }
+                        </Link>
+
+                        <span>
+                          /
+                        </span>
+
+                        <span className="truncate">
+                          {
+                            meeting.customerName
+                          }
+                        </span>
+                      </div>
+
+                      {meeting.location && (
+                        <p className="mt-2 truncate text-xs text-slate-400">
+                          場所：
+                          {
+                            meeting.location
+                          }
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="shrink-0 sm:text-right">
+                      {/* Meeting予定日時 */}
+                      <p className="text-sm font-medium text-slate-600">
+                        {formatMeetingScheduledAt(
+                          meeting.scheduledAt,
+                        )}
+                      </p>
+
+                      <div className="mt-2 flex flex-wrap gap-2 sm:justify-end">
+                        {/* Meeting Status */}
+                        <span
+                          className={[
+                            "rounded-full px-2.5 py-1 text-xs font-semibold",
+                            getMeetingStatusClass(
+                              meeting.status,
+                            ),
+                          ].join(" ")}
+                        >
+                          {getMeetingStatusLabel(
+                            meeting.status,
+                          )}
+                        </span>
+
+                        {/* Meeting Method */}
+                        <span
+                          className={[
+                            "rounded-full px-2.5 py-1 text-xs font-semibold",
+                            getMeetingMethodClass(
+                              meeting.method,
+                            ),
+                          ].join(" ")}
+                        >
+                          {getMeetingMethodLabel(
+                            meeting.method,
+                          )}
+                        </span>
+
+                        {meeting.durationMinutes !==
+                          null && (
+                          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
+                            {
+                              meeting
+                                .durationMinutes
+                            }
+                            分
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ),
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* ===========================================
          * 最近の案件
          * =========================================== */}
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -1375,11 +1860,10 @@ export default async function DashboardPage() {
         {/* ===========================================
          * 営業データ概要
          *
-         * Taskは実データ連携済み。
+         * Customer / Project / Task / Meetingの
+         * 実データをDashboard APIから表示する。
          *
-         * Meeting / Notification APIは
-         * まだ実装していないため、
-         * それらのMock表示は行わない。
+         * Notificationは今後実装予定。
          * =========================================== */}
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <h2 className="text-xl font-bold text-slate-900">
@@ -1462,6 +1946,36 @@ export default async function DashboardPage() {
               </span>
             </div>
 
+            {/* Meeting総数 */}
+            <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-4">
+              <span className="text-sm text-slate-600">
+                全商談
+              </span>
+
+              <span className="font-bold text-slate-900">
+                {
+                  summary
+                    .meetingCount
+                }
+                件
+              </span>
+            </div>
+
+            {/* 予定Meeting */}
+            <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-4">
+              <span className="text-sm text-slate-600">
+                予定商談
+              </span>
+
+              <span className="font-bold text-slate-900">
+                {
+                  summary
+                    .scheduledMeetingCount
+                }
+                件
+              </span>
+            </div>
+
             {/* Project総額 */}
             <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-4">
               <span className="text-sm text-slate-600">
@@ -1478,7 +1992,7 @@ export default async function DashboardPage() {
           </div>
 
           <p className="mt-5 text-xs leading-6 text-slate-400">
-            商談・通知機能は今後のAPI実装後にDashboardへ追加します。
+            顧客・案件・タスク・商談の実データを集計しています。
           </p>
         </div>
       </section>
