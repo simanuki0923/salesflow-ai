@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import {
+  LoaderCircle,
   Save,
+  Sparkles,
   Trash2,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -18,6 +20,7 @@ import {
 import {
   createMeeting,
   deleteMeeting,
+  suggestMeeting,
   updateMeeting,
 } from "@/lib/api/meetings";
 
@@ -141,6 +144,30 @@ export default function MeetingForm({
     isDeleting,
     setIsDeleting,
   ] = useState(false);
+
+  /**
+   * AI提案生成中。
+   *
+   * 保存処理とは独立した通信状態として管理する。
+   */
+  const [
+    isAiSuggesting,
+    setIsAiSuggesting,
+  ] = useState(false);
+
+  /**
+   * AI提案専用Error。
+   *
+   * 通常のMeeting保存Errorとは分離することで、
+   * AI提案に失敗してもForm入力や通常保存を
+   * 継続できるようにする。
+   */
+  const [
+    aiError,
+    setAiError,
+  ] = useState<string | null>(
+    null,
+  );
 
   /**
    * Form Field共通更新処理。
@@ -390,6 +417,145 @@ export default function MeetingForm({
   };
 
   /**
+   * 商談内容からAI提案を生成する。
+   *
+   * MeetingForm
+   * ↓
+   * suggestMeeting()
+   * ↓
+   * POST /api/v1/meeting-ai/suggest
+   * ↓
+   * OpenAI Responses API
+   * ↓
+   * result / nextAction
+   * ↓
+   * Formへ反映
+   *
+   * AI提案はこの時点ではDBへ保存しない。
+   * Userが内容を確認・修正したあと、
+   * 通常の保存処理を実行する。
+   */
+  const handleAiSuggest =
+    async (): Promise<void> => {
+      setAiError(null);
+
+      /**
+       * Backend AI Requestと同様、
+       * AI提案には商談名と商談内容を必須とする。
+       *
+       * 通常のMeeting保存Validationとは
+       * 独立して確認する。
+       */
+      const aiValidationErrors:
+        MeetingFormErrors = {};
+
+      if (
+        formData.title.trim() === ""
+      ) {
+        aiValidationErrors.title =
+          "AI提案には商談名の入力が必要です。";
+      }
+
+      if (
+        formData.description.trim() === ""
+      ) {
+        aiValidationErrors.description =
+          "AI提案には商談内容の入力が必要です。";
+      }
+
+      if (
+        Object.keys(
+          aiValidationErrors,
+        ).length > 0
+      ) {
+        setErrors(
+          (current) => ({
+            ...current,
+            ...aiValidationErrors,
+          }),
+        );
+
+        setAiError(
+          "AI提案に必要な項目を入力してください。",
+        );
+
+        return;
+      }
+
+      /**
+       * 既存の結果・次回対応がある場合、
+       * AI提案によって上書きされるため
+       * Userへ事前確認する。
+       */
+      if (
+        formData.result.trim() !== "" ||
+        formData.nextAction.trim() !== ""
+      ) {
+        const confirmed =
+          window.confirm(
+            "現在の商談結果・次回対応をAI提案で置き換えますか？",
+          );
+
+        if (!confirmed) {
+          return;
+        }
+      }
+
+      setIsAiSuggesting(true);
+
+      try {
+        const suggestion =
+          await suggestMeeting(
+            formData,
+          );
+
+        /**
+         * AI ResponseをFormへ反映するだけで、
+         * DB保存は行わない。
+         */
+        setFormData(
+          (current) => ({
+            ...current,
+
+            result:
+              suggestion.result,
+
+            nextAction:
+              suggestion.nextAction,
+          }),
+        );
+
+        /**
+         * AI提案によって値が入るため、
+         * result / nextActionのErrorを解除する。
+         */
+        setErrors(
+          (current) => ({
+            ...current,
+            result: undefined,
+            nextAction: undefined,
+          }),
+        );
+      } catch (error) {
+        if (
+          error instanceof ApiError
+        ) {
+          setAiError(
+            error.message,
+          );
+
+          return;
+        }
+
+        setAiError(
+          "AI提案の生成に失敗しました。",
+        );
+      } finally {
+        setIsAiSuggesting(false);
+      }
+    };
+
+  /**
    * Meeting削除。
    *
    * 編集画面の場合だけ使用する。
@@ -450,7 +616,8 @@ export default function MeetingForm({
 
   const disabled =
     isSubmitting ||
-    isDeleting;
+    isDeleting ||
+    isAiSuggesting;
 
   return (
     <form
@@ -862,15 +1029,51 @@ export default function MeetingForm({
        * Meeting結果・Next Action
        * ================================================ */}
       <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div>
-          <h2 className="text-lg font-bold text-slate-900">
-            商談結果・次回対応
-          </h2>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 className="text-lg font-bold text-slate-900">
+              商談結果・次回対応
+            </h2>
 
-          <p className="mt-1 text-sm text-slate-500">
-            商談で決まった内容と次に行う対応を記録します。
-          </p>
+            <p className="mt-1 text-sm text-slate-500">
+              商談で決まった内容と次に行う対応を記録します。
+            </p>
+
+            <p className="mt-1 text-xs text-slate-400">
+              AI提案は自動保存されません。内容を確認・修正してから保存してください。
+            </p>
+          </div>
+
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={
+              handleAiSuggest
+            }
+            className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-4 text-sm font-semibold text-violet-700 transition hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isAiSuggesting ? (
+              <LoaderCircle
+                size={17}
+                className="animate-spin"
+              />
+            ) : (
+              <Sparkles
+                size={17}
+              />
+            )}
+
+            {isAiSuggesting
+              ? "AI提案を生成中..."
+              : "AIで提案"}
+          </button>
         </div>
+
+        {aiError && (
+          <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {aiError}
+          </div>
+        )}
 
         <div className="mt-5 grid gap-5 lg:grid-cols-2">
           {/* Result */}
