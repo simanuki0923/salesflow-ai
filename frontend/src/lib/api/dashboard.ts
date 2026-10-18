@@ -7,6 +7,11 @@ import type {
 } from "@/lib/api/types";
 
 import type {
+  MeetingMethod,
+  MeetingStatus,
+} from "@/types/meeting";
+
+import type {
   ProjectPriority,
   ProjectStatus,
 } from "@/types/project";
@@ -25,8 +30,8 @@ import type {
  *
  * に対応する。
  *
- * Customer / Projectだけでなく、
- * Taskの集計情報もDashboard APIから取得する。
+ * Customer / Project / Task / Meetingの
+ * 集計情報をDashboard APIから取得する。
  */
 export type DashboardSummary = {
   /** 登録Customer総数 */
@@ -46,6 +51,12 @@ export type DashboardSummary = {
 
   /** in_progress状態のTask数 */
   inProgressTaskCount: number;
+
+  /** 登録Meeting総数 */
+  meetingCount: number;
+
+  /** scheduled状態のMeeting数 */
+  scheduledMeetingCount: number;
 };
 
 /**
@@ -87,6 +98,25 @@ export type DashboardTaskStatusCounts = {
   todo: number;
 
   inProgress: number;
+
+  completed: number;
+
+  cancelled: number;
+};
+
+/**
+ * Meeting Statusごとの件数。
+ *
+ * BackendのMeeting Domainでは、
+ *
+ * scheduled
+ * completed
+ * cancelled
+ *
+ * の3種類を使用する。
+ */
+export type DashboardMeetingStatusCounts = {
+  scheduled: number;
 
   completed: number;
 
@@ -186,6 +216,47 @@ export type DashboardUpcomingTask = {
 };
 
 /**
+ * Dashboardの「予定が近い商談」に表示するデータ。
+ *
+ * Laravel Dashboard APIの、
+ *
+ * data.upcomingMeetings
+ *
+ * に対応する。
+ */
+export type DashboardUpcomingMeeting = {
+  /** Meeting ID */
+  id: number;
+
+  /** Meetingが所属するProject ID */
+  projectId: number;
+
+  /** Meetingが所属するProject名 */
+  projectName: string;
+
+  /** Projectを所有するCustomer名 */
+  customerName: string;
+
+  /** Meeting名 */
+  title: string;
+
+  /** Meeting Status */
+  status: MeetingStatus;
+
+  /** Meeting Method */
+  method: MeetingMethod;
+
+  /** 商談予定日時 */
+  scheduledAt: string;
+
+  /** 所要時間 */
+  durationMinutes: number | null;
+
+  /** 場所・オンライン情報 */
+  location: string | null;
+};
+
+/**
  * GET /api/v1/dashboard
  *
  * が返すDashboard全体のデータ。
@@ -197,9 +268,11 @@ export type DashboardUpcomingTask = {
  * ├─ summary
  * ├─ projectStatusCounts
  * ├─ taskStatusCounts
+ * ├─ meetingStatusCounts
  * ├─ recentProjects
  * ├─ upcomingProjects
- * └─ upcomingTasks
+ * ├─ upcomingTasks
+ * └─ upcomingMeetings
  */
 export type DashboardApiData = {
   /** Dashboard上部の集計情報 */
@@ -213,6 +286,10 @@ export type DashboardApiData = {
   taskStatusCounts:
     DashboardTaskStatusCounts;
 
+  /** Meeting Status別件数 */
+  meetingStatusCounts:
+    DashboardMeetingStatusCounts;
+
   /** 最近更新されたProject */
   recentProjects:
     DashboardRecentProject[];
@@ -224,6 +301,10 @@ export type DashboardApiData = {
   /** 期限が近いTask */
   upcomingTasks:
     DashboardUpcomingTask[];
+
+  /** 予定日時が近いMeeting */
+  upcomingMeetings:
+    DashboardUpcomingMeeting[];
 };
 
 /**
