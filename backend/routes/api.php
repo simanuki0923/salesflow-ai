@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\V1\CustomerController;
 use App\Http\Controllers\Api\V1\DashboardController;
+use App\Http\Controllers\Api\V1\MeetingController;
 use App\Http\Controllers\Api\V1\ProjectController;
 use App\Http\Controllers\Api\V1\TaskController;
 use App\Http\Resources\Api\V1\UserResource;
@@ -92,6 +93,14 @@ Route::prefix('v1')
                 Route::apiResource(
                     'tasks',
                     TaskController::class,
+                );
+
+                /**
+                 * Meeting REST API。
+                 */
+                Route::apiResource(
+                    'meetings',
+                    MeetingController::class,
                 );
             });
     });
