@@ -45,6 +45,10 @@ class MeetingAiSuggestionApiTest extends TestCase
         parent::setUp();
 
         config([
+            'ai.meeting.enabled' => true,
+
+            'ai.meeting.provider' => 'openai',
+
             'services.openai.api_key' => 'test-openai-key',
 
             'services.openai.model' => 'gpt-6-luna',
@@ -383,5 +387,162 @@ class MeetingAiSuggestionApiTest extends TestCase
             ->assertExactJson([
                 'message' => 'AI提案の生成に失敗しました。しばらくしてから再度お試しください。',
             ]);
+    }
+
+    /**
+     * Demo Providerでは外部APIへ通信せず、
+     * Meeting内容からDemo提案を返す。
+     */
+    public function test_demo_provider_generates_suggestion_without_external_http_request(): void
+    {
+        config([
+            'ai.meeting.provider' => 'demo',
+        ]);
+
+        Http::fake();
+
+        $user =
+            User::factory()->create();
+
+        $this
+            ->actingAs($user)
+            ->postJson(
+                '/api/v1/meeting-ai/suggest',
+                $this->validPayload(),
+            )
+            ->assertOk()
+            ->assertExactJson([
+                'data' => [
+                    'result' => '【デモ提案】初回ヒアリング：顧客から現行業務の入力作業を減らしたいという要望があった。見積書の提示を希望している。',
+
+                    'nextAction' => '【デモ提案】商談内容を整理し、次回対応の担当・期限・実施内容を確認してください。',
+                ],
+            ]);
+
+        /**
+         * Demo Providerは外部AI APIを使用しない。
+         *
+         * 公開Portfolioで利用しても
+         * OpenAI API料金が発生しないことを保証する。
+         */
+        Http::assertNothingSent();
+    }
+
+    /**
+     * AI機能そのものを無効化した場合は503を返し、
+     * Provider処理や外部API通信を実行しない。
+     */
+    public function test_disabled_meeting_ai_returns_service_unavailable_without_external_http_request(): void
+    {
+        config([
+            'ai.meeting.enabled' => false,
+        ]);
+
+        Http::fake();
+
+        $user =
+            User::factory()->create();
+
+        $this
+            ->actingAs($user)
+            ->postJson(
+                '/api/v1/meeting-ai/suggest',
+                $this->validPayload(),
+            )
+            ->assertStatus(503)
+            ->assertExactJson([
+                'message' => 'AI提案機能は現在利用できません。',
+            ]);
+
+        Http::assertNothingSent();
+    }
+
+    /**
+     * 未対応Providerが設定されている場合は、
+     * 内部の設定ErrorをClientへ公開せず502を返す。
+     */
+    public function test_unsupported_provider_returns_bad_gateway_without_external_http_request(): void
+    {
+        config([
+            'ai.meeting.provider' => 'unsupported',
+        ]);
+
+        Http::fake();
+
+        $user =
+            User::factory()->create();
+
+        $this
+            ->actingAs($user)
+            ->postJson(
+                '/api/v1/meeting-ai/suggest',
+                $this->validPayload(),
+            )
+            ->assertStatus(502)
+            ->assertExactJson([
+                'message' => 'AI提案の生成に失敗しました。しばらくしてから再度お試しください。',
+            ]);
+
+        Http::assertNothingSent();
+    }
+
+    /**
+     * Meeting AI提案APIはLogin User単位で
+     * 1分間のRequest回数を制限する。
+     *
+     * Demo Providerを使用して、
+     * Test中に外部AI APIへ通信しない状態で
+     * Rate Limitだけを検証する。
+     */
+    public function test_meeting_ai_is_rate_limited_per_authenticated_user(): void
+    {
+        config([
+            'ai.meeting.provider' => 'demo',
+
+            'ai.meeting.rate_limit_per_minute' => 5,
+        ]);
+
+        Http::fake();
+
+        $user =
+            User::factory()->create();
+
+        /**
+         * 1〜5回目までは正常に利用できる。
+         */
+        for (
+            $attempt = 1;
+            $attempt <= 5;
+            $attempt++
+        ) {
+            $this
+                ->actingAs($user)
+                ->postJson(
+                    '/api/v1/meeting-ai/suggest',
+                    $this->validPayload(),
+                )
+                ->assertOk();
+        }
+
+        /**
+         * 同じUserによる6回目のRequestは、
+         * Providerへ到達する前に429で拒否する。
+         */
+        $this
+            ->actingAs($user)
+            ->postJson(
+                '/api/v1/meeting-ai/suggest',
+                $this->validPayload(),
+            )
+            ->assertStatus(429)
+            ->assertExactJson([
+                'message' => 'AI提案の利用回数が上限に達しました。1分ほど待ってから再度お試しください。',
+            ]);
+
+        /**
+         * Demo Providerなので、
+         * Rate Limit Test中も外部HTTP通信は0件。
+         */
+        Http::assertNothingSent();
     }
 }

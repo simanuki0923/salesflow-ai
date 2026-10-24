@@ -105,9 +105,13 @@ Route::prefix('v1')
                 Route::post(
                     '/meeting-ai/suggest',
                     MeetingAiSuggestionController::class,
-                )->name(
-                    'meeting-ai.suggest',
-                );
+                )
+                    ->middleware(
+                        'throttle:meeting-ai',
+                    )
+                    ->name(
+                        'meeting-ai.suggest',
+                    );
 
                 /**
                  * Meeting REST API。
