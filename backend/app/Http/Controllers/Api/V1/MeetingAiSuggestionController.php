@@ -4,7 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\SuggestMeetingAiRequest;
-use App\Services\Ai\OpenAiMeetingSuggestionService;
+use App\Services\Ai\MeetingAiSuggestionService;
 use Illuminate\Http\JsonResponse;
 use Throwable;
 
@@ -39,8 +39,20 @@ class MeetingAiSuggestionController extends Controller
      */
     public function __invoke(
         SuggestMeetingAiRequest $request,
-        OpenAiMeetingSuggestionService $service,
+        MeetingAiSuggestionService $service,
     ): JsonResponse {
+        if (! config(
+            'ai.meeting.enabled',
+            true,
+        )) {
+            return response()->json(
+                [
+                    'message' => 'AI提案機能は現在利用できません。',
+                ],
+                503,
+            );
+        }
+
         try {
             $suggestion =
                 $service->suggest(

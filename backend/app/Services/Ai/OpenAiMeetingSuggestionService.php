@@ -22,7 +22,7 @@ use RuntimeException;
  * このServiceはDBを更新しない。
  * AIから提案を取得して返すことだけを担当する。
  */
-class OpenAiMeetingSuggestionService
+class OpenAiMeetingSuggestionService implements MeetingAiSuggestionProvider
 {
     /**
      * Meeting内容から、
