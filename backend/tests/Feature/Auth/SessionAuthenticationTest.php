@@ -87,6 +87,79 @@ class SessionAuthenticationTest extends TestCase
             ->assertJsonPath(
                 'data.email',
                 $user->email
+            )
+            ->assertJsonPath(
+                'data.isDemo',
+                false
+            )
+            ->assertJsonPath(
+                'data.isReadOnly',
+                false
+            );
+    }
+
+    /**
+     * Demo Userの場合はDemo / Read Only状態を返す。
+     */
+    public function test_demo_user_can_get_demo_read_only_state(): void
+    {
+        config([
+            'demo.user.email' => 'demo@salesflow-ai.local',
+            'demo.read_only' => true,
+        ]);
+
+        $user = User::factory()->create([
+            'email' => 'demo@salesflow-ai.local',
+        ]);
+
+        $this->actingAs($user);
+
+        $response = $this->getJson(
+            '/api/v1/me'
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath(
+                'data.isDemo',
+                true
+            )
+            ->assertJsonPath(
+                'data.isReadOnly',
+                true
+            );
+    }
+
+    /**
+     * Demo UserでもRead Only設定を無効にした場合は
+     * isReadOnly=falseを返す。
+     */
+    public function test_demo_user_can_get_disabled_read_only_state(): void
+    {
+        config([
+            'demo.user.email' => 'demo@salesflow-ai.local',
+            'demo.read_only' => false,
+        ]);
+
+        $user = User::factory()->create([
+            'email' => 'demo@salesflow-ai.local',
+        ]);
+
+        $this->actingAs($user);
+
+        $response = $this->getJson(
+            '/api/v1/me'
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath(
+                'data.isDemo',
+                true
+            )
+            ->assertJsonPath(
+                'data.isReadOnly',
+                false
             );
     }
 

@@ -14,6 +14,24 @@ return [
     |
     */
 
+    /*
+    |--------------------------------------------------------------------------
+    | Demo Read Only Mode
+    |--------------------------------------------------------------------------
+    |
+    | trueの場合、Demo UserによるCustomer / Project / Task / Meetingの
+    | 登録・変更・削除を禁止する。
+    |
+    | 一覧・詳細・Dashboard・AI提案など、
+    | Databaseを書き換えない操作は引き続き利用できる。
+    |
+    */
+
+    'read_only' => env(
+        'DEMO_READ_ONLY',
+        true,
+    ),
+
     'user' => [
         'name' => env(
             'DEMO_USER_NAME',

@@ -5,6 +5,12 @@ import type {
 import Header from "./Header";
 import Sidebar from "./Sidebar";
 
+import DemoModeBanner
+  from "@/components/demo/DemoModeBanner";
+
+import DemoModeProvider
+  from "@/components/demo/DemoModeProvider";
+
 import type {
   AuthUser,
 } from "@/lib/api/auth";
@@ -41,24 +47,35 @@ export default function AppShell({
   user,
 }: AppShellProps) {
   return (
-    <div className="min-h-screen bg-[#f7f9fc]">
-      {/* PC表示用Sidebar */}
-      <Sidebar />
+    <DemoModeProvider
+      isDemo={user.isDemo}
+      isReadOnly={user.isReadOnly}
+    >
+      <div className="min-h-screen bg-[#f7f9fc]">
+        {/* PC表示用Sidebar */}
+        <Sidebar />
 
-      {/*
-       * Login User情報をHeaderへ渡す。
-       */}
-      <Header user={user} />
+        {/*
+         * Login User情報をHeaderへ渡す。
+         */}
+        <Header user={user} />
 
-      {/*
-       * lg以上ではSidebar幅260px分だけ
-       * Main Contentを右へ移動する。
-       */}
-      <main className="min-h-screen pt-[88px] lg:ml-[260px]">
-        <div className="mx-auto w-full max-w-[1600px] p-6 lg:p-8">
-          {children}
-        </div>
-      </main>
-    </div>
+        {/*
+         * lg以上ではSidebar幅260px分だけ
+         * Main Contentを右へ移動する。
+         */}
+        <main className="min-h-screen pt-[88px] lg:ml-[260px]">
+          <div className="mx-auto w-full max-w-[1600px] p-6 lg:p-8">
+            {/*
+             * Demo Accountの場合だけ
+             * Read Only状態を共通Bannerで表示する。
+             */}
+            <DemoModeBanner />
+
+            {children}
+          </div>
+        </main>
+      </div>
+    </DemoModeProvider>
   );
 }

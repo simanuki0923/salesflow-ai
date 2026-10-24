@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\ProtectDemoUserMutations;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -24,6 +25,17 @@ return Application::configure(basePath: dirname(__DIR__))
          * Session Cookie を使って User を認証できる。
          */
         $middleware->statefulApi();
+
+        /**
+         * 公開Demo Userによる
+         * Customer / Project / Task / Meetingの
+         * Database変更Requestを禁止するMiddleware。
+         *
+         * Routeでは短いAlias名で利用する。
+         */
+        $middleware->alias([
+            'demo.read-only' => ProtectDemoUserMutations::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         /**

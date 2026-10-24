@@ -13,6 +13,10 @@ import {
 } from "@/lib/api/client";
 
 import {
+  useDemoMode,
+} from "@/components/demo/DemoModeProvider";
+
+import {
   createProject,
   updateProject,
 } from "@/lib/api/projects";
@@ -110,6 +114,10 @@ export default function ProjectForm({
    * Project詳細画面へ遷移するため使用する。
    */
   const router = useRouter();
+
+  const {
+    isReadOnly,
+  } = useDemoMode();
 
   /**
    * Formの現在値。
@@ -399,6 +407,19 @@ export default function ProjectForm({
       FormEvent<HTMLFormElement>,
   ): Promise<void> => {
     event.preventDefault();
+
+    /**
+     * Demo Read Only Modeでは、
+     * Enter Key等でSubmitされても
+     * APIへ書き込みRequestを送信しない。
+     */
+    if (isReadOnly) {
+      setSubmitError(
+        "Demo Modeではデータを保存できません。",
+      );
+
+      return;
+    }
 
     /**
      * API通信前にFrontend Validation。
@@ -1025,7 +1046,7 @@ export default function ProjectForm({
 
         <button
           type="submit"
-          disabled={isSubmitting}
+          disabled={isSubmitting || isReadOnly}
           className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
         >
           <Save size={18} />
