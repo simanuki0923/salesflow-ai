@@ -1,0 +1,158 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      # RepositoryのSource CodeをRunnerへCheckoutする。
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      # Laravelが要求するPHP 8.3と、
+      # Test・Applicationで使用するExtensionを用意する。
+      #
+      # Composerは固定された古いVersionではなく、
+      # Composer v2の最新Security Updateを利用する。
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, intl, pdo_sqlite, sqlite3, curl, xml, zip
+          coverage: none
+          tools: composer:v2
+
+      - name: Show runtime versions
+        run: |
+          php --version
+          composer --version
+
+      # Git管理対象外の.envをCI環境用に生成する。
+      #
+      # phpunit.xmlではDB_CONNECTION=sqlite、
+      # DB_DATABASE=:memory:を指定しているため、
+      # PostgreSQL ServerをCI上で起動する必要はない。
+      - name: Prepare Laravel environment
+        run: |
+          cp .env.example .env
+
+      # composer.lockを基準に同じDependencyを再現する。
+      - name: Install backend dependencies
+        run: |
+          composer install \
+            --no-interaction \
+            --prefer-dist \
+            --no-progress
+
+      - name: Generate application key
+        run: php artisan key:generate --ansi
+
+      # composer.json / composer.lockの整合性を検査する。
+      - name: Validate Composer configuration
+        run: composer validate
+
+      # PHP Dependencyに既知のSecurity Advisoryが
+      # 存在しないことを検査する。
+      - name: Audit backend dependencies
+        run: composer audit
+
+      # Laravel PHP Coding Styleを検査する。
+      # CIでは自動修正せず、違反があれば失敗させる。
+      - name: Check PHP formatting
+        run: ./vendor/bin/pint --test
+
+      # Unit / Feature Testをすべて実行する。
+      #
+      # Meeting AI TestではHttp::fake()を利用しているため、
+      # OpenAI API Keyや外部API通信は不要。
+      - name: Run Laravel tests
+        run: php artisan test
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    env:
+      # Production Build時にFrontendが参照できる
+      # CI専用の非Secret Public Environment Variable。
+      NEXT_PUBLIC_BACKEND_URL: http://localhost:8000
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000/api/v1
+      NEXT_PUBLIC_FRONTEND_URL: http://localhost:3000
+
+      # CIではNext.js Telemetryを無効化する。
+      NEXT_TELEMETRY_DISABLED: 1
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      # Local開発環境と同じNode.js 22.22.0を使用する。
+      #
+      # package-lock.jsonを利用してnpm Download Cacheも
+      # GitHub Actions側で再利用する。
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22.22.0'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # Local環境とnpm Versionも揃える。
+      - name: Setup npm
+        run: npm install --global npm@11.12.1
+
+      - name: Show runtime versions
+        run: |
+          node --version
+          npm --version
+
+      # npm installではなくnpm ciを使用し、
+      # package-lock.jsonどおりのDependencyを再現する。
+      - name: Install frontend dependencies
+        run: npm ci
+
+      # npm Dependencyの既知脆弱性を検査する。
+      #
+      # 新しいSecurity Advisoryが公開された場合も、
+      # Pull Requestの段階で検知できる。
+      - name: Audit frontend dependencies
+        run: npm audit
+
+      # TypeScriptの型Errorを検査する。
+      - name: Check TypeScript
+        run: npx tsc --noEmit
+
+      # ESLintによる静的解析。
+      - name: Run ESLint
+        run: npm run lint
+
+      # 実際にProduction Build可能か確認する。
+      - name: Build frontend
+        run: npm run build
