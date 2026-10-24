@@ -1,0 +1,96 @@
+version: 2
+
+updates:
+  # ---------------------------------------------------------------------------
+  # Backend / Composer
+  # ---------------------------------------------------------------------------
+  #
+  # Laravel Backendで使用しているPHP Packageを週1回確認する。
+  #
+  # minor / patch Updateは1つのPRへまとめ、
+  # major Updateは影響範囲が大きいため個別PRとして確認する。
+  #
+  - package-ecosystem: "composer"
+    directory: "/backend"
+
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Tokyo"
+
+    open-pull-requests-limit: 5
+
+    commit-message:
+      prefix: "deps(backend)"
+
+    groups:
+      minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # ---------------------------------------------------------------------------
+  # Frontend / npm
+  # ---------------------------------------------------------------------------
+  #
+  # Next.js / React / TypeScriptなどのFrontend Dependencyを
+  # 週1回確認する。
+  #
+  # npm auditだけでは新Versionの存在そのものは検知しないため、
+  # Dependabot Version Updatesと併用する。
+  #
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Tokyo"
+
+    open-pull-requests-limit: 5
+
+    commit-message:
+      prefix: "deps(frontend)"
+
+    groups:
+      minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # ---------------------------------------------------------------------------
+  # GitHub Actions
+  # ---------------------------------------------------------------------------
+  #
+  # CIで利用しているGitHub Actions自体もDependencyとして監視する。
+  #
+  # actions/checkoutやactions/setup-nodeなどにUpdateが公開された場合、
+  # Dependabotが更新PRを作成できる。
+  #
+  - package-ecosystem: "github-actions"
+    directory: "/"
+
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Tokyo"
+
+    open-pull-requests-limit: 5
+
+    commit-message:
+      prefix: "deps(actions)"
+
+    groups:
+      minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
