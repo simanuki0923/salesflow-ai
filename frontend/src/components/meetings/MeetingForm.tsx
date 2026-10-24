@@ -18,6 +18,10 @@ import {
 } from "@/lib/api/client";
 
 import {
+  useDemoMode,
+} from "@/components/demo/DemoModeProvider";
+
+import {
   createMeeting,
   deleteMeeting,
   suggestMeeting,
@@ -99,6 +103,10 @@ export default function MeetingForm({
 }: MeetingFormProps) {
   const router =
     useRouter();
+
+  const {
+    isReadOnly,
+  } = useDemoMode();
 
   /**
    * 現在のForm値。
@@ -331,6 +339,18 @@ export default function MeetingForm({
   ): Promise<void> => {
     event.preventDefault();
 
+    /**
+     * Demo Read Only Modeでは
+     * Frontendから保存Requestを送信しない。
+     */
+    if (isReadOnly) {
+      setSubmitError(
+        "Demo Modeではデータを保存できません。",
+      );
+
+      return;
+    }
+
     const validationErrors =
       validate();
 
@@ -562,6 +582,18 @@ export default function MeetingForm({
    */
   const handleDelete =
     async (): Promise<void> => {
+      /**
+       * Demo Read Only Modeでは
+       * Frontendから削除Requestを送信しない。
+       */
+      if (isReadOnly) {
+        setSubmitError(
+          "Demo Modeではデータを削除できません。",
+        );
+
+        return;
+      }
+
       if (
         mode !== "edit" ||
         meetingId === undefined
@@ -1165,7 +1197,7 @@ export default function MeetingForm({
           {mode === "edit" && (
             <button
               type="button"
-              disabled={disabled}
+              disabled={disabled || isReadOnly}
               onClick={
                 handleDelete
               }
@@ -1192,7 +1224,7 @@ export default function MeetingForm({
 
           <button
             type="submit"
-            disabled={disabled}
+            disabled={disabled || isReadOnly}
             className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Save

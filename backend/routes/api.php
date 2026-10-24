@@ -78,6 +78,8 @@ Route::prefix('v1')
                 Route::apiResource(
                     'customers',
                     CustomerController::class,
+                )->middleware(
+                    'demo.read-only',
                 );
 
                 /**
@@ -86,6 +88,8 @@ Route::prefix('v1')
                 Route::apiResource(
                     'projects',
                     ProjectController::class,
+                )->middleware(
+                    'demo.read-only',
                 );
 
                 /**
@@ -94,6 +98,8 @@ Route::prefix('v1')
                 Route::apiResource(
                     'tasks',
                     TaskController::class,
+                )->middleware(
+                    'demo.read-only',
                 );
 
                 /**
@@ -119,6 +125,8 @@ Route::prefix('v1')
                 Route::apiResource(
                     'meetings',
                     MeetingController::class,
+                )->middleware(
+                    'demo.read-only',
                 );
             });
     });

@@ -20,6 +20,10 @@ import {
 } from "@/lib/api/client";
 
 import {
+  useDemoMode,
+} from "@/components/demo/DemoModeProvider";
+
+import {
   createCustomer,
   updateCustomer,
 } from "@/lib/api/customers";
@@ -79,6 +83,10 @@ export default function CustomerForm({
 }: CustomerFormProps) {
   const router =
     useRouter();
+
+  const {
+    isReadOnly,
+  } = useDemoMode();
 
   /**
    * initialDataが存在すれば編集。
@@ -256,6 +264,19 @@ export default function CustomerForm({
       FormEvent<HTMLFormElement>,
   ) => {
     event.preventDefault();
+
+    /**
+     * Demo Read Only Modeでは、
+     * Enter Key等でForm Submitが発生しても
+     * APIへ書き込みRequestを送信しない。
+     */
+    if (isReadOnly) {
+      setSubmitError(
+        "Demo Modeではデータを保存できません。",
+      );
+
+      return;
+    }
 
     const validationErrors =
       validate();
@@ -693,7 +714,7 @@ export default function CustomerForm({
 
         <button
           type="submit"
-          disabled={isSubmitting}
+          disabled={isSubmitting || isReadOnly}
           className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
         >
           <Save size={18} />

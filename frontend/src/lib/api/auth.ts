@@ -15,6 +15,18 @@ export type AuthUser = {
   id: number;
   name: string;
   email: string;
+
+  /**
+   * BackendのUserResourceが判定した
+   * 公開Demo Accountかどうか。
+   */
+  isDemo: boolean;
+
+  /**
+   * Demo Accountの書き込み操作を
+   * 無効化するかどうか。
+   */
+  isReadOnly: boolean;
 };
 
 /**
