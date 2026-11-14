@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\V1\MeetingAiSuggestionController;
 use App\Http\Controllers\Api\V1\MeetingController;
 use App\Http\Controllers\Api\V1\ProjectController;
 use App\Http\Controllers\Api\V1\TaskController;
+use App\Http\Controllers\Api\V1\TokenAuthenticationController;
 use App\Http\Resources\Api\V1\UserResource;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -42,6 +43,20 @@ Route::prefix('v1')
         )->name('health');
 
         /**
+         * Bearer Token Login。
+         *
+         * Vercel / RailwayのようにFrontendとBackendが
+         * 異なるDomainで稼働するProduction環境向け。
+         */
+        Route::post(
+            '/auth/login',
+            [
+                TokenAuthenticationController::class,
+                'store',
+            ],
+        )->name('auth.login');
+
+        /**
          * ここから下のAPIはLogin必須。
          *
          * Sanctum SPA Authenticationによる
@@ -49,6 +64,17 @@ Route::prefix('v1')
          */
         Route::middleware('auth:sanctum')
             ->group(function (): void {
+                /**
+                 * 現在使用中のBearer Tokenを無効化する。
+                 */
+                Route::post(
+                    '/auth/logout',
+                    [
+                        TokenAuthenticationController::class,
+                        'destroy',
+                    ],
+                )->name('auth.logout');
+
                 /**
                  * 現在Login中のUser情報。
                  */

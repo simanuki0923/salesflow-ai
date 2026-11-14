@@ -1,6 +1,6 @@
 import {
   apiRequest,
-  backendRequest,
+  frontendRequest,
 } from "@/lib/api/client";
 
 import type {
@@ -30,7 +30,7 @@ export type AuthUser = {
 };
 
 /**
- * Login時にLaravelへ送信するData。
+ * Login時に送信するData。
  */
 export type LoginCredentials = {
   email: string;
@@ -39,47 +39,36 @@ export type LoginCredentials = {
 };
 
 /**
- * SanctumのCSRF Cookieを取得する。
+ * Next.js Route Handler経由でLoginする。
  *
- * Login / Logout等の
- * State-changing Requestを送る前に実行する。
- */
-export async function initializeCsrf(): Promise<void> {
-  await backendRequest<void>(
-    "/sanctum/csrf-cookie",
-  );
-}
-
-/**
- * Laravel Session AuthenticationでLoginする。
- *
- * 1. CSRF Cookie取得
- * 2. POST /login
- * 3. Laravel Session Cookie取得
+ * Laravelが発行したPersonal Access Tokenは
+ * Browser JavaScriptへ返さず、
+ * Next.js側でHttpOnly Cookieへ保存する。
  */
 export async function login(
   credentials: LoginCredentials,
 ): Promise<AuthUser> {
-  await initializeCsrf();
-
   const response =
-    await backendRequest<
+    await frontendRequest<
       ApiResourceResponse<AuthUser>
     >(
-      "/login",
+      "/api/auth/login",
       {
-        method: "POST",
+        method:
+          "POST",
 
-        body: JSON.stringify({
-          email:
-            credentials.email,
+        body:
+          JSON.stringify({
+            email:
+              credentials.email,
 
-          password:
-            credentials.password,
+            password:
+              credentials.password,
 
-          remember:
-            credentials.remember ?? false,
-        }),
+            remember:
+              credentials.remember ??
+              false,
+          }),
       },
     );
 
@@ -89,9 +78,8 @@ export async function login(
 /**
  * 現在Login中のUserを取得する。
  *
- * RequestInitを受け取れるようにしておくことで、
- * BrowserだけでなくNext.js Server Componentからも
- * Cookie Headerを渡して利用できる。
+ * Server Componentでは
+ * getServerAuthRequestInit()でBearer Tokenを渡す。
  */
 export async function getCurrentUser(
   init: RequestInit = {},
@@ -108,20 +96,15 @@ export async function getCurrentUser(
 }
 
 /**
- * Laravel SessionからLogoutする。
+ * Laravel Personal Access Tokenを失効し、
+ * Next.js側HttpOnly Cookieを削除する。
  */
 export async function logout(): Promise<void> {
-  /**
-   * XSRF-TOKENが期限切れ・未取得の場合にも
-   * Logout Requestを送れるように
-   * CSRF Cookieを更新してから実行する。
-   */
-  await initializeCsrf();
-
-  await backendRequest<void>(
-    "/logout",
+  await frontendRequest<void>(
+    "/api/auth/logout",
     {
-      method: "POST",
+      method:
+        "POST",
     },
   );
 }
