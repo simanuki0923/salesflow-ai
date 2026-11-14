@@ -2,7 +2,41 @@
 
 営業活動における顧客・案件・タスク・商談情報を一元管理する、個人開発のCRM Webアプリケーションです。
 
-LaravelによるREST APIとNext.jsによるFrontendを分離した構成とし、認証・CRUD・ダッシュボード・AI営業支援機能に加え、テスト、Security Audit、CI、Dependabotまで含めた継続的な開発・運用を意識して実装しています。
+LaravelによるREST APIとNext.jsによるFrontendを分離した構成とし、認証・CRUD・ダッシュボード・AI営業支援機能に加えて、テスト、Security Audit、CI、Dependabot、本番Deploymentまで含めた継続的な開発・運用を意識して実装しています。
+
+## 公開Demo
+
+SalesFlow AIはPortfolio用Demo環境として公開しています。
+
+### Frontend
+
+https://salesflow-ai-bay.vercel.app
+
+### Backend API
+
+https://salesflow-ai-production-4493ac2e.up.railway.app
+
+### Demo Account
+
+```text
+Email: demo@salesflow-ai.local
+Password: demo-password
+```
+
+Demo AccountはRead Onlyです。
+
+以下の機能を確認できます。
+
+- Customer / Project / Task / Meetingの閲覧
+- Dashboardによる営業状況の確認
+- Meeting AI Assistantによる提案生成
+- Customer / Project単位の関連情報確認
+
+Demo Accountではデータの登録・変更・削除はできません。
+
+Frontend側で操作を制限するとともに、Backend API側でも書き込みを拒否することで、公開Demo Dataを保護しています。
+
+---
 
 ## プロジェクト概要
 
@@ -15,33 +49,60 @@ SalesFlow AIでは、営業担当者が日常的に扱う以下の情報を一�
 - ダッシュボードによる進捗確認
 - AIによる商談結果・次回対応案の提案
 
-単純なCRUDアプリケーションだけではなく、認証・データ所有権・AI API連携・外部APIコスト管理・Rate Limit・自動テスト・Security Audit・CIまで含めて設計しています。
+単純なCRUDアプリケーションだけではなく、認証・データ所有権・AI API連携・外部APIコスト管理・Rate Limit・自動テスト・Security Audit・CI・Production Deploymentまで含めて設計しています。
 
 ## 開発目的
 
-Webアプリケーション開発に必要となるFrontend / Backend / Database / Authentication / Test / Security / CIを一通り実装し、個人開発として継続的に改善・運用できるシステムを構築することを目的としています。
+Webアプリケーション開発に必要となるFrontend / Backend / Database / Authentication / Test / Security / CI / Deploymentを一通り実装し、個人開発として継続的に改善・運用できるシステムを構築することを目的としています。
 
 特に以下を意識しています。
 
 - FrontendとBackendの責務分離
 - REST APIを利用したデータ連携
 - Login User単位のデータ所有権管理
+- 安全なAuthentication Token管理
 - 外部AI APIへ直接依存しすぎない設計
 - AI提案を人間が確認してから保存するHuman-in-the-loop
 - API利用料金を考慮したDemo Provider
+- 公開Demo Dataを保護するRead Only制御
 - 既知脆弱性への継続的な対応
 - Pull Request単位での自動品質チェック
+- Production環境を想定したFrontend / Backend / Database分離
 
 ## 主な機能
 
 ### Authentication
 
-Laravel Sanctumを利用したSession / Cookieベースの認証を実装しています。
+Laravel Sanctumを利用した認証を実装しています。
+
+Production環境では、FrontendのVercelとBackendのRailwayが異なるDomainで動作するため、Sanctum Personal Access TokenによるBearer Token認証を利用しています。
+
+```text
+Browser
+ ↓
+Next.js / Vercel
+ ↓ HttpOnly Cookie
+Next.js Route Handler
+ ↓ Authorization: Bearer Token
+Laravel / Railway
+ ↓
+PostgreSQL
+```
+
+Laravel Backendが発行したTokenはBrowser JavaScriptへ直接公開せず、Next.js側のHttpOnly Cookieへ保存します。
+
+Client ComponentからLaravel APIへ通信する場合もNext.js Route Handlerを経由し、Server側でBearer TokenをAuthorization Headerへ設定します。
+
+実装している主な認証機能:
 
 - Login
 - Logout
 - Login User取得
+- Sanctum Personal Access Token発行
+- Logout時のToken失効
+- HttpOnly CookieによるToken保護
 - 未認証UserからのAPIアクセス制御
+- Laravel Session / Cookie認証との互換性維持
 
 ### Customer
 
@@ -105,6 +166,26 @@ Laravel Sanctumを利用したSession / Cookieベースの認証を実装して�
 
 Customer / Projectに加えて、Task・Meetingの集計情報や直近予定を表示します。
 
+## Public Demo Safe Mode
+
+公開Demo AccountではRead Only制御を実装しています。
+
+Frontendで保存・削除操作を制限するだけではなく、Backend API側でもDemo UserからのMutation Requestを拒否します。
+
+```text
+Demo User
+ ↓
+POST / PATCH / PUT / DELETE
+ ↓
+Demo Read Only Middleware
+ ↓
+403 Forbidden
+```
+
+これにより、Frontend側の操作を回避してAPIへ直接Requestを送信した場合でも、Demo Dataを変更できない構成にしています。
+
+Meeting AI AssistantについてはDemo Accountでも利用可能です。
+
 ## Meeting AI Assistant
 
 商談内容から、営業担当者向けに以下を提案するAI支援機能を実装しています。
@@ -159,7 +240,7 @@ AI_PROVIDER=demo
 
 外部AI APIへ通信せずDemo提案を生成します。
 
-公開Portfolio環境でOpenAI API利用料金を継続的に発生させないことを目的としています。
+Productionの公開Portfolio環境ではDemo Providerを使用し、OpenAI API利用料金が継続的に発生しない構成にしています。
 
 ### OpenAI Provider
 
@@ -209,7 +290,11 @@ MEETING_AI_RATE_LIMIT_PER_MINUTE=5
 flowchart TD
     Browser[Browser]
 
+    Vercel[Vercel]
     Next[Next.js / TypeScript]
+    Proxy[Next.js Route Handler]
+
+    Railway[Railway]
     Laravel[Laravel REST API]
     Auth[Laravel Sanctum]
 
@@ -222,10 +307,14 @@ flowchart TD
     Demo[Demo Provider]
     OpenAI[OpenAI Responses API]
 
-    DB[(PostgreSQL)]
+    DB[(Railway PostgreSQL)]
 
-    Browser --> Next
-    Next --> Laravel
+    Browser --> Vercel
+    Vercel --> Next
+    Next --> Proxy
+
+    Proxy -->|Bearer Token| Railway
+    Railway --> Laravel
     Laravel --> Auth
 
     Laravel --> Customer
@@ -297,15 +386,66 @@ TaskやMeetingに直接`user_id`を持たせるのではなく、Project → Cus
 - GitHub
 - GitHub Actions
 - Dependabot
+- Vercel
+- Railway
 - WSL2
 - Ubuntu 24.04 LTS
+
+## Deployment
+
+Production環境はFrontend / Backend / Databaseを分離しています。
+
+```text
+Browser
+ ↓
+Vercel
+Next.js
+https://salesflow-ai-bay.vercel.app
+
+ ↓ Bearer Token
+
+Railway
+Laravel REST API
+https://salesflow-ai-production-4493ac2e.up.railway.app
+
+ ↓
+
+Railway PostgreSQL
+```
+
+### Frontend
+
+- Vercel
+- Next.js
+- HttpOnly CookieによるAuthentication Token保持
+- Next.js Route HandlerによるBackend API Proxy
+
+### Backend
+
+- Railway
+- Laravel 13
+- Laravel Sanctum Bearer Token Authentication
+- Demo Read Only Middleware
+- Meeting AI Rate Limit
+
+### Database
+
+- Railway PostgreSQL
+
+Production環境ではMeeting AIにDemo Providerを使用し、外部OpenAI APIの継続的な利用料金が発生しない構成としています。
 
 ## Security
 
 Security面では以下の対策を行っています。
 
 - Laravel Sanctumによる認証
+- Sanctum Personal Access TokenによるBearer Token認証
+- Authentication TokenをNext.js HttpOnly Cookieへ保存
+- Browser JavaScriptからTokenへ直接アクセスできない構成
+- Next.js Route Handlerを経由したBackend API通信
+- Logout時のAccess Token失効
 - Login User単位のデータ所有権確認
+- Demo AccountのBackend Read Only制御
 - Laravel FormRequestによる入力Validation
 - OpenAI API KeyのBackend管理
 - `.env`によるSecret管理
@@ -325,19 +465,22 @@ LaravelのUnit / Feature Testを実装しています。
 現在のBackend Test結果:
 
 ```text
-91 tests passed
-377 assertions
+104 tests passed
+432 assertions
 ```
 
 主な確認対象:
 
 - Authentication
+- Token Authentication
+- Token Logout
 - Customer API
 - Project API
 - Task API
 - Meeting API
 - Dashboard API
 - Userごとのデータ所有権
+- Demo Read Only制御
 - Meeting AI API
 - Demo AI Provider
 - OpenAI Provider
@@ -414,19 +557,35 @@ OPENAI_MODEL=gpt-6-luna
 OPENAI_BASE_URL=https://api.openai.com/v1
 ```
 
-公開Demoでは`AI_PROVIDER=demo`を想定しています。
+公開Demoでは以下を使用します。
+
+```env
+MEETING_AI_ENABLED=true
+AI_PROVIDER=demo
+DEMO_READ_ONLY=true
+```
 
 OpenAI APIを使用する場合のみ`AI_PROVIDER=openai`へ変更し、Backend環境へAPI Keyを設定します。
+
+Production環境ではDatabaseやApplication KeyなどのSecretをRailway Environment Variablesで管理します。
 
 ### Frontend
 
 Local開発環境では以下を使用します。
 
 ```env
-NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1
-NEXT_PUBLIC_FRONTEND_URL=http://localhost:3000
 ```
+
+ProductionではVercel Environment VariablesへRailway Backend APIを設定します。
+
+```env
+NEXT_PUBLIC_API_BASE_URL=https://salesflow-ai-production-4493ac2e.up.railway.app/api/v1
+```
+
+Backend API URLはSecretではありません。
+
+Authentication Token自体はEnvironment VariableやBrowser JavaScriptでは管理せず、Next.jsのHttpOnly Cookieを利用します。
 
 ## Local Setup
 
@@ -470,7 +629,9 @@ Backend
 http://localhost:8000
 ```
 
-SanctumのCookie / Session認証を利用するため、Local開発ではFrontend / Backendとも`localhost`へ統一しています。
+Local環境でもNext.jsのAuthentication Route Handlerを経由してLaravelのToken Authenticationを利用できます。
+
+Laravel側にはSession / Cookie認証も互換性のため残しています。
 
 ## Quality Check
 
@@ -508,23 +669,47 @@ npm run build
 
 Next.jsとLaravelを分離し、FrontendからLaravel REST APIを利用する構成にしています。
 
+ProductionではVercelとRailwayを分離し、実際のFrontend / Backend分離環境で運用しています。
+
 ### 2. データ所有権
 
 単にLogin済みか確認するだけではなく、Customer → Project → Task / Meetingの関連を利用し、Login User以外のデータへアクセスできないようにしています。
 
-### 3. AIを自動保存しない設計
+### 3. 異なるDomain間のAuthentication
+
+VercelとRailwayのように異なるDomainでFrontend / Backendを運用できるよう、Laravel Sanctum Personal Access TokenとNext.js Route Handlerを組み合わせています。
+
+TokenはNext.jsのHttpOnly Cookieへ保存し、Browser JavaScriptへ直接公開しません。
+
+```text
+Browser
+ ↓ HttpOnly Cookie
+Next.js
+ ↓ Bearer Token
+Laravel API
+```
+
+### 4. 公開Demo Dataの保護
+
+公開PortfolioではDemo AccountをRead Onlyにしています。
+
+Frontendだけで操作を無効化するのではなく、Backend MiddlewareでもMutation Requestを拒否します。
+
+これにより、APIへ直接アクセスされた場合でもDemo Dataが変更されないようにしています。
+
+### 5. AIを自動保存しない設計
 
 AIはあくまで営業担当者を支援する提案機能として扱い、AI ResponseをDatabaseへ直接保存しません。
 
 営業担当者自身が内容を確認・修正してから保存します。
 
-### 4. AI APIコストへの対応
+### 6. AI APIコストへの対応
 
 公開Portfolioで継続的なOpenAI API利用料金が発生しないよう、Demo Providerを実装しています。
 
 必要な環境ではEnvironment VariableだけでOpenAI Providerへ切り替えられます。
 
-### 5. Securityを開発フローへ組み込む
+### 7. Securityを開発フローへ組み込む
 
 脆弱性が発見された場合だけ手動対応するのではなく、
 
@@ -546,18 +731,36 @@ Merge
 
 という継続的な運用を構築しています。
 
+### 8. Production Deploymentまで実施
+
+Local開発だけで終わらせず、
+
+```text
+GitHub
+ ↓
+Vercel / Next.js
+ ↓
+Railway / Laravel
+ ↓
+Railway PostgreSQL
+```
+
+というProduction環境を構築し、実際に公開Demoとして利用できる状態まで運用しています。
+
 ## 今後の改善予定
 
 今後は以下を予定しています。
 
-- 公開Demo環境の構築
-- Demo Account / Demo Dataの整備
 - READMEへの画面キャプチャ追加
 - 営業活動タイムライン機能
 - Dashboard / Report機能の強化
-- Deployment環境での監視・Logging強化
+- Production環境での監視・Logging強化
 - E2E Testの導入
+- UI / UXの継続的な改善
+- AI提案機能の拡張
 
 ## About This Project
 
-SalesFlow AIは、Web Applicationの設計・実装だけでなく、Test、Security、CI、Dependency Management、AI APIの運用コストまで含めた開発経験を積むことを目的として継続開発している個人プロジェクトです。
+SalesFlow AIは、Web Applicationの設計・実装だけでなく、Authentication、Test、Security、CI、Dependency Management、AI APIの運用コスト、Production Deploymentまで含めた**個人開発・運用実績**として継続開発しているプロジェクトです。
+
+Frontend / Backend / Databaseを分離した構成を実際に公開環境へDeployし、第三者が確認できるPortfolio Applicationとして運用しています。
