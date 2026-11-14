@@ -38,6 +38,42 @@ Frontend側で操作を制限するとともに、Backend API側でも書き込�
 
 ---
 
+## Screenshots
+
+### Login
+
+公開Demo Accountを利用してSalesFlow AIへログインできます。
+
+![SalesFlow AI Login](docs/screenshots/01-login.png)
+
+### Dashboard
+
+Customer / Project / Task / Meetingの集計情報や、直近の営業活動をDashboardから確認できます。
+
+![SalesFlow AI Dashboard](docs/screenshots/02-dashboard.png)
+
+### Customer Management
+
+営業活動の起点となるCustomer情報を一覧で確認できます。
+
+![SalesFlow AI Customers](docs/screenshots/03-customers.png)
+
+### Project Detail
+
+Customerに紐づく営業案件と、その案件に関連するTask / Meetingを確認できます。
+
+![SalesFlow AI Project Detail](docs/screenshots/04-project-detail.png)
+
+### Meeting AI Assistant
+
+商談内容をもとに、AIが商談結果と次回対応案を提案します。
+
+AIの提案内容はDatabaseへ自動保存せず、Userが内容を確認・修正してから保存するHuman-in-the-loop構成です。
+
+![SalesFlow AI Meeting AI Assistant](docs/screenshots/05-meeting-ai.png)
+
+---
+
 ## プロジェクト概要
 
 SalesFlow AIでは、営業担当者が日常的に扱う以下の情報を一つのシステムで管理できます。
@@ -751,7 +787,6 @@ Railway PostgreSQL
 
 今後は以下を予定しています。
 
-- READMEへの画面キャプチャ追加
 - 営業活動タイムライン機能
 - Dashboard / Report機能の強化
 - Production環境での監視・Logging強化
